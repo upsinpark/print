@@ -39,7 +39,7 @@
         }
         .animate-slide-up { animation: slideUp 0.3s ease-out; }
         .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-        @keyframes slideUp { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         input, select, textarea { font-size: 16px !important; }
@@ -55,7 +55,7 @@
     import { initializeApp } from "firebase/app";
     import { getAuth, signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence } from "firebase/auth";
     import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, query, onSnapshot, serverTimestamp, writeBatch, getDoc, setDoc, orderBy } from "firebase/firestore";
-    import { Plus, CheckCircle, Settings, ClipboardList, TrendingUp, DollarSign, Trash2, X, ChevronDown, Lock, Copy, Database, Users, FileText, Calendar, CheckSquare, Search } from 'lucide-react';
+    import { Plus, CheckCircle, Settings, ClipboardList, TrendingUp, DollarSign, Trash2, X, ChevronDown, Lock, Copy, Database, Users, FileText, Calendar, CheckSquare, Search, Info } from 'lucide-react';
 
     // --- Firebase 설정 ---
     const firebaseConfig = {
@@ -82,6 +82,13 @@
         const d = date.seconds ? new Date(date.seconds * 1000) : new Date(date);
         return `${d.getMonth()+1}/${d.getDate()}`;
     };
+
+    // 상세 날짜 포맷 (YYYY-MM-DD)
+    const formatFullDate = (date) => {
+        if (!date) return '-';
+        const d = date.seconds ? new Date(date.seconds * 1000) : new Date(date);
+        return d.toLocaleDateString('ko-KR');
+    }
 
     // input[type="date"]용 YYYY-MM-DD 문자열 반환 (로컬 시간 기준)
     const toInputDate = (dateObj) => {
@@ -371,19 +378,16 @@
         const [start, setStart] = useState(toInputDate(firstDay));
         const [end, setEnd] = useState(toInputDate(today));
         const [searchClient, setSearchClient] = useState('');
+        const [selectedTask, setSelectedTask] = useState(null);
 
         const filtered = useMemo(() => {
             return tasks.filter(t => {
-                // 날짜 필터
                 const targetDate = t.paymentDate || t.updatedAt;
                 if (!targetDate) return false;
                 const d = targetDate.seconds ? new Date(targetDate.seconds * 1000) : new Date(targetDate);
                 const dateStr = toInputDate(d);
                 const dateMatch = dateStr >= start && dateStr <= end;
-                
-                // 거래처 검색 필터
                 const clientMatch = searchClient === '' || (t.client && t.client.toLowerCase().includes(searchClient.toLowerCase()));
-                
                 return dateMatch && clientMatch;
             });
         }, [tasks, start, end, searchClient]);
@@ -394,6 +398,7 @@
             if(confirm('정말 이 내역을 삭제하시겠습니까? 삭제후에는 복구할 수 없습니다.')) {
                 try {
                     await deleteDoc(doc(db, `artifacts/${appId}/public/data/tasks`, taskId));
+                    setSelectedTask(null); // 모달 닫기
                 } catch (e) {
                     alert("삭제 실패: " + e.message);
                 }
@@ -407,17 +412,9 @@
                         <div className="flex-1"><label className="block text-[10px] text-gray-400 mb-1">시작일</label><input type="date" value={start} onChange={e=>setStart(e.target.value)} className="w-full text-xs border border-gray-200 rounded p-1.5 bg-gray-50"/></div>
                         <div className="flex-1"><label className="block text-[10px] text-gray-400 mb-1">종료일</label><input type="date" value={end} onChange={e=>setEnd(e.target.value)} className="w-full text-xs border border-gray-200 rounded p-1.5 bg-gray-50"/></div>
                     </div>
-                    {/* 거래처 검색창 추가 */}
                     <div className="mb-3 relative">
-                        <input 
-                            type="text" 
-                            placeholder="거래처명 검색..." 
-                            value={searchClient} 
-                            onChange={e=>setSearchClient(e.target.value)} 
-                            className="w-full text-xs border border-gray-200 rounded p-2 pl-8 bg-gray-50 focus:bg-white transition-colors"
-                        />
+                        <input type="text" placeholder="거래처명 검색..." value={searchClient} onChange={e=>setSearchClient(e.target.value)} className="w-full text-xs border border-gray-200 rounded p-2 pl-8 bg-gray-50 focus:bg-white transition-colors"/>
                         <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
-                        {/* 간단한 자동완성 UI */}
                         {searchClient && clients.filter(c => c.name.toLowerCase().includes(searchClient.toLowerCase()) && c.name !== searchClient).length > 0 && (
                             <div className="absolute z-10 w-full bg-white border border-gray-100 rounded-b shadow-lg max-h-32 overflow-y-auto">
                                 {clients.filter(c => c.name.toLowerCase().includes(searchClient.toLowerCase())).map(c => (
@@ -433,19 +430,62 @@
                     {filtered.length === 0 ? <div className="p-6 text-center text-gray-300 text-xs">기간 내 내역이 없습니다.</div> :
                         <div className="divide-y divide-gray-50">
                             {filtered.map(t => (
-                                <div key={t.id} className="p-2.5 flex items-center text-xs gap-2 hover:bg-gray-50">
-                                    {/* 한 줄 표시: 날짜 | 거래처 | 제품명 | 수량 | 합계 | 삭제버튼 */}
+                                <div key={t.id} onClick={() => setSelectedTask(t)} className="p-2.5 flex items-center text-xs gap-2 hover:bg-gray-50 cursor-pointer">
                                     <div className="text-gray-400 w-16 text-[10px] whitespace-nowrap">{formatDate(t.paymentDate || t.updatedAt)}</div>
                                     <div className="font-bold text-gray-700 w-20 truncate">{t.client}</div>
                                     <div className="text-gray-600 flex-1 truncate min-w-[60px]">{t.productName}</div>
                                     <div className="text-blue-600 font-bold w-10 text-right whitespace-nowrap">{t.quantity}개</div>
                                     <div className="font-bold text-gray-800 w-16 text-right whitespace-nowrap">{formatCurrency(t.revenue)}</div>
-                                    <button onClick={() => handleDeleteStatsItem(t.id)} className="text-red-400 hover:text-red-600 p-1 rounded-full"><Trash2 size={14}/></button>
                                 </div>
                             ))}
                         </div>
                     }
                 </div>
+
+                {/* 통계 상세 팝업 */}
+                {selectedTask && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={() => setSelectedTask(null)}>
+                        <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+                            <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+                                <h3 className="font-bold text-gray-800">상세 정보</h3>
+                                <button onClick={() => setSelectedTask(null)}><X size={18} className="text-gray-500"/></button>
+                            </div>
+                            <div className="p-5 space-y-4 text-sm">
+                                <div className="grid grid-cols-3 gap-y-3 gap-x-2">
+                                    <div className="text-gray-500 text-xs">날짜</div>
+                                    <div className="col-span-2 font-medium">{formatFullDate(selectedTask.paymentDate || selectedTask.updatedAt)}</div>
+                                    
+                                    <div className="text-gray-500 text-xs">거래처</div>
+                                    <div className="col-span-2 font-medium">{selectedTask.client}</div>
+                                    
+                                    <div className="text-gray-500 text-xs">제품명</div>
+                                    <div className="col-span-2 font-bold text-gray-800">{selectedTask.productName}</div>
+                                    
+                                    <div className="text-gray-500 text-xs">수량 / 단가</div>
+                                    <div className="col-span-2">{selectedTask.quantity}개 <span className="text-gray-400 mx-1">x</span> {formatCurrency(selectedTask.unitPrice)}</div>
+                                    
+                                    <div className="text-gray-500 text-xs pt-2 border-t mt-1">합계</div>
+                                    <div className="col-span-2 font-bold text-blue-600 text-lg pt-2 border-t mt-1">{formatCurrency(selectedTask.revenue)}</div>
+
+                                    {selectedTask.description && (
+                                        <>
+                                            <div className="text-gray-500 text-xs">메모</div>
+                                            <div className="col-span-2 bg-gray-50 p-2 rounded text-gray-600 text-xs">{selectedTask.description}</div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="p-4 border-t bg-gray-50 flex justify-end">
+                                <button 
+                                    onClick={() => handleDeleteStatsItem(selectedTask.id)} 
+                                    className="bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1 transition"
+                                >
+                                    <Trash2 size={14}/> 삭제하기
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     };
