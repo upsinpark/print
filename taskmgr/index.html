@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>모바일 작업관리 (팀 공유용)</title>
+    <title>바른덴탈 작업관리</title>
     
     <!-- 1. 스타일 및 폰트 -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -372,7 +372,7 @@
                 <header className="bg-white/95 backdrop-blur-md sticky top-0 z-10 border-b border-gray-100">
                     <div className="px-4 py-2 flex justify-between items-center">
                         <h1 className="text-base font-bold text-gray-800 flex items-center gap-2">
-                            작업관리 <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">공용</span>
+                            바른덴탈 작업관리 <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">공용</span>
                         </h1>
                         <button onClick={() => setIsProductModalOpen(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-400"><Settings size={16}/></button>
                     </div>
@@ -536,47 +536,58 @@
                 
                 {isProductModalOpen && <ProductManagerModal onClose={()=>setIsProductModalOpen(false)} products={products} db={db} appId={appId} />}
                 
-                {/* 정산 명세서 모달 (닫기 편의성 추가) */}
+                {/* 정산 명세서 모달 */}
                 {isSettlementModalOpen && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={() => setIsSettlementModalOpen(false)}>
-                        <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
-                            <div className="p-3 border-b flex justify-between font-bold"><span>미리보기 ({settlementTasks.length}건)</span><button onClick={() => setIsSettlementModalOpen(false)}><X size={18}/></button></div>
-                            <pre className="p-4 bg-gray-50 flex-1 overflow-auto text-xs whitespace-pre-wrap leading-relaxed">{useMemo(() => { 
-                                let t = `[정산요청] ${getKSTDateString(new Date())}\n`; 
-                                const g = {}; 
-                                settlementTasks.forEach(i => { const c = i.client||'기타'; if(!g[c]) g[c]=[]; g[c].push(i); }); 
-                                let tot=0; 
-                                Object.entries(g).forEach(([c,l]) => { 
-                                    t += `\n■ ${c}\n`; 
-                                    l.forEach(i => { t += `- ${i.productName} (${i.quantity}개): ${formatCurrency(i.revenue)}\n`; tot+=i.revenue; }); 
-                                }); 
-                                t += `\n----------------\n총액: ${formatCurrency(tot)}`; 
-                                return t; 
-                            }, [settlementTasks])}</pre>
-                            <div className="p-3 border-t flex gap-2">
-                                <button onClick={() => navigator.clipboard.writeText(useMemo(() => { 
-                                    let t = `[정산요청] ${getKSTDateString(new Date())}\n`; 
-                                    const g = {}; 
-                                    settlementTasks.forEach(i => { const c = i.client||'기타'; if(!g[c]) g[c]=[]; g[c].push(i); }); 
-                                    let tot=0; 
-                                    Object.entries(g).forEach(([c,l]) => { 
-                                        t += `\n■ ${c}\n`; 
-                                        l.forEach(i => { t += `- ${i.productName} (${i.quantity}개): ${formatCurrency(i.revenue)}\n`; tot+=i.revenue; }); 
-                                    }); 
-                                    t += `\n----------------\n총액: ${formatCurrency(tot)}`; 
-                                    return t; 
-                                }, [settlementTasks])).then(()=>alert("복사됨"))} className="flex-1 bg-gray-800 text-white py-2 rounded-lg text-sm font-bold">복사</button>
-                                <button onClick={async () => { 
-                                    if(!confirm('명세서에 포함된 항목들을 청구 상태로 변경하시겠습니까?')) return;
-                                    const batch = writeBatch(db); 
-                                    settlementTasks.forEach(t => batch.update(doc(db, `artifacts/${appId}/public/data/tasks`, t.id), { status: 'settlement_requested', settlementDate: serverTimestamp() })); 
-                                    await batch.commit(); 
-                                    setIsSettlementModalOpen(false); 
-                                }} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-bold">요청 확정</button>
-                            </div>
-                        </div>
-                    </div>
+                    <SettlementPreviewModal 
+                        tasks={settlementTasks} 
+                        onClose={() => setIsSettlementModalOpen(false)} 
+                        onConfirm={async () => { 
+                            if(!confirm('명세서에 포함된 항목들을 청구 상태로 변경하시겠습니까?')) return;
+                            const batch = writeBatch(db); 
+                            settlementTasks.forEach(t => batch.update(doc(db, `artifacts/${appId}/public/data/tasks`, t.id), { status: 'settlement_requested', settlementDate: serverTimestamp() })); 
+                            await batch.commit(); 
+                            setIsSettlementModalOpen(false); 
+                        }} 
+                    />
                 )}
+            </div>
+        );
+    };
+
+    // --- 서브: 제품관리 모달 ---
+    const ProductManagerModal = ({ onClose, products, db, appId }) => {
+        const [name, setName] = useState(''); const [price, setPrice] = useState('');
+        const add = async () => { if(name) { await addDoc(collection(db, `artifacts/${appId}/public/data/products`), {name, defaultUnitPrice:Number(price)}); setName(''); } };
+        return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6 backdrop-blur-sm"><div className="bg-white w-full max-w-sm rounded-2xl shadow-xl overflow-hidden"><div className="p-3 border-b flex justify-between font-bold items-center bg-gray-50"><span>제품 관리</span><button onClick={onClose}><X size={18}/></button></div><div className="p-3 bg-gray-50 border-b flex gap-2"><input className="flex-1 p-2 border rounded-lg text-sm" placeholder="제품명" value={name} onChange={e=>setName(e.target.value)}/><input type="number" className="w-20 p-2 border rounded-lg text-sm" placeholder="단가" value={price} onChange={e=>setPrice(e.target.value)}/><button onClick={add} className="bg-green-500 text-white px-3 rounded-lg text-sm font-bold">추가</button></div><div className="max-h-60 overflow-y-auto p-2">{products.map(p=><div key={p.id} className="flex justify-between p-2 border-b last:border-0 text-sm items-center"><span>{p.name} <span className="text-gray-400 text-xs">({formatCurrency(p.defaultUnitPrice)})</span></span><button onClick={()=>deleteDoc(doc(db,`artifacts/${appId}/public/data/products`,p.id))} className="text-red-400"><Trash2 size={14}/></button></div>)}</div></div></div>;
+    };
+
+    // --- 서브: 정산 미리보기 ---
+    const SettlementPreviewModal = ({ tasks, onClose, onConfirm }) => {
+        const txt = useMemo(() => { 
+            let t = `[정산요청] ${getKSTDateString(new Date())}\n`; 
+            const g = {}; 
+            tasks.forEach(i => { const c = i.client||'기타'; if(!g[c]) g[c]=[]; g[c].push(i); }); 
+            let tot=0; 
+            Object.entries(g).forEach(([c,l]) => { 
+                t += `\n■ ${c}\n`; 
+                l.forEach(i => { t += `- ${i.productName} (${i.quantity}개): ${formatCurrency(i.revenue)}\n`; tot+=i.revenue; }); 
+            }); 
+            t += `\n----------------\n총액: ${formatCurrency(tot)}`; 
+            return t; 
+        }, [tasks]);
+        
+        const copy = () => { navigator.clipboard.writeText(txt).then(()=>alert("복사됨")); };
+        
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={onClose}>
+                <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+                    <div className="p-3 border-b flex justify-between font-bold"><span>미리보기 ({tasks.length}건)</span><button onClick={onClose}><X size={18}/></button></div>
+                    <pre className="p-4 bg-gray-50 flex-1 overflow-auto text-xs whitespace-pre-wrap leading-relaxed">{txt}</pre>
+                    <div className="p-3 border-t flex gap-2">
+                        <button onClick={copy} className="flex-1 bg-gray-800 text-white py-2 rounded-lg text-sm font-bold">복사</button>
+                        <button onClick={onConfirm} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-bold">요청 확정</button>
+                    </div>
+                </div>
             </div>
         );
     };
