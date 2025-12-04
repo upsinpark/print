@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>바른덴탈 작업관리</title>
     
+    <!-- PWA 설정 (아이콘 및 앱 설치) -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="icon.png">
+    <link rel="apple-touch-icon" href="icon.png">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    
     <!-- 1. 스타일 및 폰트 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -536,130 +544,47 @@
                 
                 {isProductModalOpen && <ProductManagerModal onClose={()=>setIsProductModalOpen(false)} products={products} db={db} appId={appId} />}
                 
-                {/* 정산 명세서 모달 */}
+                {/* 정산 명세서 모달 (닫기 편의성 추가) */}
                 {isSettlementModalOpen && (
-                    <SettlementPreviewModal 
-                        tasks={settlementTasks} 
-                        onClose={() => setIsSettlementModalOpen(false)} 
-                        onConfirm={async () => { 
-                            if(!confirm('명세서에 포함된 항목들을 청구 상태로 변경하시겠습니까?')) return;
-                            const batch = writeBatch(db); 
-                            settlementTasks.forEach(t => batch.update(doc(db, `artifacts/${appId}/public/data/tasks`, t.id), { status: 'settlement_requested', settlementDate: serverTimestamp() })); 
-                            await batch.commit(); 
-                            setIsSettlementModalOpen(false); 
-                        }} 
-                    />
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={() => setIsSettlementModalOpen(false)}>
+                        <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+                            <div className="p-3 border-b flex justify-between font-bold"><span>미리보기 ({settlementTasks.length}건)</span><button onClick={() => setIsSettlementModalOpen(false)}><X size={18}/></button></div>
+                            <pre className="p-4 bg-gray-50 flex-1 overflow-auto text-xs whitespace-pre-wrap leading-relaxed">{useMemo(() => { 
+                                let t = `[정산요청] ${getKSTDateString(new Date())}\n`; 
+                                const g = {}; 
+                                settlementTasks.forEach(i => { const c = i.client||'기타'; if(!g[c]) g[c]=[]; g[c].push(i); }); 
+                                let tot=0; 
+                                Object.entries(g).forEach(([c,l]) => { 
+                                    t += `\n■ ${c}\n`; 
+                                    l.forEach(i => { t += `- ${i.productName} (${i.quantity}개): ${formatCurrency(i.revenue)}\n`; tot+=i.revenue; }); 
+                                }); 
+                                t += `\n----------------\n총액: ${formatCurrency(tot)}`; 
+                                return t; 
+                            }, [settlementTasks])}</pre>
+                            <div className="p-3 border-t flex gap-2">
+                                <button onClick={() => navigator.clipboard.writeText(useMemo(() => { 
+                                    let t = `[정산요청] ${getKSTDateString(new Date())}\n`; 
+                                    const g = {}; 
+                                    settlementTasks.forEach(i => { const c = i.client||'기타'; if(!g[c]) g[c]=[]; g[c].push(i); }); 
+                                    let tot=0; 
+                                    Object.entries(g).forEach(([c,l]) => { 
+                                        t += `\n■ ${c}\n`; 
+                                        l.forEach(i => { t += `- ${i.productName} (${i.quantity}개): ${formatCurrency(i.revenue)}\n`; tot+=i.revenue; }); 
+                                    }); 
+                                    t += `\n----------------\n총액: ${formatCurrency(tot)}`; 
+                                    return t; 
+                                }, [settlementTasks])).then(()=>alert("복사됨"))} className="flex-1 bg-gray-800 text-white py-2 rounded-lg text-sm font-bold">복사</button>
+                                <button onClick={async () => { 
+                                    if(!confirm('명세서에 포함된 항목들을 청구 상태로 변경하시겠습니까?')) return;
+                                    const batch = writeBatch(db); 
+                                    settlementTasks.forEach(t => batch.update(doc(db, `artifacts/${appId}/public/data/tasks`, t.id), { status: 'settlement_requested', settlementDate: serverTimestamp() })); 
+                                    await batch.commit(); 
+                                    setIsSettlementModalOpen(false); 
+                                }} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-bold">요청 확정</button>
+                            </div>
+                        </div>
+                    </div>
                 )}
-            </div>
-        );
-    };
-
-    // --- 서브: 제품관리 모달 ---
-    const ProductManagerModal = ({ onClose, products, db, appId }) => {
-        const [name, setName] = useState(''); const [price, setPrice] = useState('');
-        const add = async () => { if(name) { await addDoc(collection(db, `artifacts/${appId}/public/data/products`), {name, defaultUnitPrice:Number(price)}); setName(''); } };
-        return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6 backdrop-blur-sm"><div className="bg-white w-full max-w-sm rounded-2xl shadow-xl overflow-hidden"><div className="p-3 border-b flex justify-between font-bold items-center bg-gray-50"><span>제품 관리</span><button onClick={onClose}><X size={18}/></button></div><div className="p-3 bg-gray-50 border-b flex gap-2"><input className="flex-1 p-2 border rounded-lg text-sm" placeholder="제품명" value={name} onChange={e=>setName(e.target.value)}/><input type="number" className="w-20 p-2 border rounded-lg text-sm" placeholder="단가" value={price} onChange={e=>setPrice(e.target.value)}/><button onClick={add} className="bg-green-500 text-white px-3 rounded-lg text-sm font-bold">추가</button></div><div className="max-h-60 overflow-y-auto p-2">{products.map(p=><div key={p.id} className="flex justify-between p-2 border-b last:border-0 text-sm items-center"><span>{p.name} <span className="text-gray-400 text-xs">({formatCurrency(p.defaultUnitPrice)})</span></span><button onClick={()=>deleteDoc(doc(db,`artifacts/${appId}/public/data/products`,p.id))} className="text-red-400"><Trash2 size={14}/></button></div>)}</div></div></div>;
-    };
-
-    // --- 서브: 정산 미리보기 ---
-    const SettlementPreviewModal = ({ tasks, onClose, onConfirm }) => {
-        const txt = useMemo(() => { 
-            let t = `[정산요청] ${getKSTDateString(new Date())}\n`; 
-            const g = {}; 
-            tasks.forEach(i => { const c = i.client||'기타'; if(!g[c]) g[c]=[]; g[c].push(i); }); 
-            let tot=0; 
-            Object.entries(g).forEach(([c,l]) => { 
-                t += `\n■ ${c}\n`; 
-                l.forEach(i => { t += `- ${i.productName} (${i.quantity}개): ${formatCurrency(i.revenue)}\n`; tot+=i.revenue; }); 
-            }); 
-            t += `\n----------------\n총액: ${formatCurrency(tot)}`; 
-            return t; 
-        }, [tasks]);
-        
-        const copy = () => { navigator.clipboard.writeText(txt).then(()=>alert("복사됨")); };
-        
-        return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={onClose}>
-                <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
-                    <div className="p-3 border-b flex justify-between font-bold"><span>미리보기 ({tasks.length}건)</span><button onClick={onClose}><X size={18}/></button></div>
-                    <pre className="p-4 bg-gray-50 flex-1 overflow-auto text-xs whitespace-pre-wrap leading-relaxed">{txt}</pre>
-                    <div className="p-3 border-t flex gap-2">
-                        <button onClick={copy} className="flex-1 bg-gray-800 text-white py-2 rounded-lg text-sm font-bold">복사</button>
-                        <button onClick={onConfirm} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-bold">요청 확정</button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    // --- 서브: 통계 (기간 상세 검색) ---
-    const StatsView = ({ tasks }) => {
-        const today = new Date();
-        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-        const [start, setStart] = useState(getKSTDateString(firstDay));
-        const [end, setEnd] = useState(getKSTDateString(today));
-
-        const filtered = useMemo(() => {
-            return tasks.filter(t => {
-                if (!t.paymentDate) return false;
-                // Firestore Timestamp 변환 후 한국 시간 기준 날짜 문자열 비교
-                const d = t.paymentDate.seconds ? new Date(t.paymentDate.seconds * 1000) : new Date(t.paymentDate);
-                const dateStr = getKSTDateString(d);
-                return dateStr >= start && dateStr <= end;
-            });
-        }, [tasks, start, end]);
-
-        const tot = filtered.reduce((a,b)=>a+b.revenue,0);
-
-        return (
-            <div className="animate-fade-in pb-16">
-                <div className="bg-white border border-gray-100 rounded-xl p-4 mb-3 shadow-sm">
-                    <div className="flex gap-2 mb-4">
-                        <div className="flex-1">
-                            <label className="block text-[10px] text-gray-400 mb-1">시작일</label>
-                            <input type="date" value={start} onChange={e=>setStart(e.target.value)} className="w-full text-xs border border-gray-200 rounded p-1.5 bg-gray-50"/>
-                        </div>
-                        <div className="flex-1">
-                            <label className="block text-[10px] text-gray-400 mb-1">종료일</label>
-                            <input type="date" value={end} onChange={e=>setEnd(e.target.value)} className="w-full text-xs border border-gray-200 rounded p-1.5 bg-gray-50"/>
-                        </div>
-                    </div>
-                    <div className="flex justify-between items-end border-t border-gray-50 pt-3">
-                        <span className="text-xs font-bold text-gray-500">기간 내 지급완료</span>
-                        <div className="text-xl font-bold text-blue-600">{formatCurrency(tot)}</div>
-                    </div>
-                </div>
-
-                <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
-                    <div className="bg-gray-50 px-4 py-2 text-xs font-bold text-gray-600 border-b border-gray-100 flex justify-between">
-                        <span>상세 내역</span>
-                        <span className="bg-white border px-1.5 rounded text-gray-400">{filtered.length}건</span>
-                    </div>
-                    {filtered.length === 0 ? <div className="p-6 text-center text-gray-300 text-xs">기간 내 내역이 없습니다.</div> :
-                        <div className="divide-y divide-gray-50">
-                            {filtered.map(t => (
-                                <div key={t.id} className="p-3 flex flex-col gap-1.5 text-xs hover:bg-gray-50">
-                                    <div className="flex justify-between items-center text-gray-500 border-b border-gray-100 pb-1.5">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[10px] bg-gray-100 px-1.5 rounded">{formatDate(t.paymentDate)}</span>
-                                            <span className="font-bold text-gray-700 text-sm">{t.client}</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <div className="font-bold text-gray-800 text-sm">{t.productName}</div>
-                                        <div className="flex items-center gap-1">
-                                            <span className="text-blue-600 font-bold">{t.quantity}개</span>
-                                            <span className="text-gray-400">x</span>
-                                            <span className="text-gray-500">{formatCurrency(t.unitPrice)}</span>
-                                            <span className="text-gray-300 mx-1">=</span>
-                                            <span className="font-bold text-gray-800 text-sm">{formatCurrency(t.revenue)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    }
-                </div>
             </div>
         );
     };
