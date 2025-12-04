@@ -36,8 +36,8 @@
         .animate-fade-in { animation: fadeIn 0.3s ease-out; }
         
         @keyframes slideUp { 
-            from { transform: translateY(100%); } 
-            to { transform: translateY(0); } 
+            from { transform: translateY(-20px); opacity: 0; } 
+            to { transform: translateY(0); opacity: 1; } 
         }
         @keyframes fadeIn { 
             from { opacity: 0; } 
@@ -129,8 +129,6 @@
         const inputRefs = useRef([]);
 
         // 간단한 로컬 PIN 인증 (팀 공용 비밀번호 개념)
-        // 실제 운영 시에는 파이어베이스에 저장된 공용 PIN을 불러와서 비교하는 것이 좋으나
-        // 여기서는 초기 편의성을 위해 '0000' 또는 로컬 스토리지 설정을 사용
         const SHARED_PIN_KEY = `sales_app_pin_${appId}`;
 
         const handleInput = (index, value) => {
@@ -242,8 +240,8 @@
         const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
         const [isProductModalOpen, setIsProductModalOpen] = useState(false);
 
-        // 폼 데이터
-        const [formData, setFormData] = useState({ client: '', productName: '', quantity: 1, unitPrice: 10000, expense: 0, description: '' });
+        // 폼 데이터 (지출 기본값 0, 단가 기본값 0)
+        const [formData, setFormData] = useState({ client: '', productName: '', quantity: 1, unitPrice: 0, expense: 0, description: '' });
 
         // 1. 인증 및 초기화
         useEffect(() => {
@@ -252,28 +250,27 @@
             return onAuthStateChanged(auth, (u) => { setUser(u); if(!u) setLoading(false); });
         }, []);
 
-        // 2. 데이터 동기화 (경로 변경: users/{uid} -> public/data)
-        // ** 핵심 수정사항: 공용 경로(public/data)를 사용하여 모든 브라우저에서 데이터 공유 **
+        // 2. 데이터 동기화
         useEffect(() => {
             if (!db) return;
             
-            // 공용 경로 설정 (appId 기준)
+            // 공용 경로 설정
             const publicPath = `artifacts/${appId}/public/data`;
 
-            const tasksQ = query(collection(db, `${publicPath}/tasks`), orderBy('createdAt', 'desc')); // 최신순 정렬 추가
+            const tasksQ = query(collection(db, `${publicPath}/tasks`), orderBy('createdAt', 'desc'));
             const clientsQ = collection(db, `${publicPath}/clients`);
             const productsQ = collection(db, `${publicPath}/products`);
 
             const unsubTasks = onSnapshot(tasksQ, (snap) => {
                 setTasks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                 setLoading(false);
-            }, (err) => console.error("Tasks Sync Error:", err)); // 에러 로깅 추가
+            }, (err) => console.error("Tasks Sync Error:", err));
 
             const unsubClients = onSnapshot(clientsQ, (snap) => setClients(snap.docs.map(d => ({id: d.id, ...d.data()}))));
             const unsubProducts = onSnapshot(productsQ, (snap) => setProducts(snap.docs.map(d => ({id: d.id, ...d.data()}))));
 
             return () => { unsubTasks(); unsubClients(); unsubProducts(); };
-        }, [db]); // user 의존성 제거 (공용 데이터이므로 user id 불필요)
+        }, [db]);
 
         // 3. 액션 핸들러
         const handleSaveTask = async () => {
@@ -284,7 +281,7 @@
                 ...formData,
                 quantity: Number(formData.quantity),
                 unitPrice: Number(formData.unitPrice),
-                expense: Number(formData.expense),
+                expense: 0, // 지출 기능 UI는 삭제했지만 데이터 호환성을 위해 0으로 저장
                 revenue: Number(formData.quantity) * Number(formData.unitPrice),
                 updatedAt: serverTimestamp()
             };
@@ -339,7 +336,8 @@
                 quantity: task.quantity, unitPrice: task.unitPrice, 
                 expense: task.expense || 0, description: task.description || '' 
             } : { 
-                client: '', productName: '', quantity: 1, unitPrice: 10000, expense: 0, description: '' 
+                // 새 작업 등록 시 기본값 설정 (단가 0)
+                client: '', productName: '', quantity: 1, unitPrice: 0, expense: 0, description: '' 
             });
             setIsTaskModalOpen(true);
         };
@@ -397,18 +395,19 @@
                     {activeTab === 'stats' && <StatsView tasks={tasks.filter(t=>t.status==='paid')} />}
                 </main>
 
-                {/* --- 콤팩트 모달 (모바일 최적화) --- */}
+                {/* --- 콤팩트 모달 (수정됨: 상단 배치 및 키보드 대응) --- */}
                 {isTaskModalOpen && (
-                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in">
-                        <div className="bg-white w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl shadow-2xl animate-slide-up overflow-hidden">
-                            {/* 모달 헤더 (축소) */}
+                    // 기존 flex items-end(하단) -> items-start(상단) + pt-10(여백) 으로 수정
+                    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm animate-fade-in pt-10">
+                        <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl animate-slide-up overflow-hidden mx-4">
+                            {/* 모달 헤더 */}
                             <div className="px-4 py-3 border-b flex justify-between items-center bg-gray-50/50">
                                 <h3 className="font-bold text-gray-800">{editingTask ? '작업 수정' : '새 작업'}</h3>
-                                <button onClick={closeTaskModal} className="w-7 h-7 flex items-center justify-center bg-gray-200 rounded-full text-gray-500"><X size={16}/></button>
+                                <button onClick={closeTaskModal} className="w-7 h-7 flex items-center justify-center bg-gray-200 rounded-full text-gray-500 hover:bg-gray-300"><X size={16}/></button>
                             </div>
                             
-                            {/* 모달 내용 (패딩 축소, 그리드 적용) */}
-                            <div className="p-4 space-y-3">
+                            {/* 모달 내용 */}
+                            <div className="p-4 space-y-4">
                                 <div className="grid grid-cols-2 gap-3">
                                     <CompactAutocomplete label="거래처" placeholder="입력/선택" value={formData.client} onChange={v => setFormData({...formData, client: v})} options={clients} />
                                     <CompactAutocomplete label="제품명" placeholder="입력/선택" value={formData.productName} onChange={v => setFormData({...formData, productName: v})} options={products} onSelect={p => setFormData(prev => ({...prev, unitPrice: p.defaultUnitPrice || 0}))} />
@@ -417,31 +416,34 @@
                                 <div className="grid grid-cols-3 gap-3">
                                     <div className="col-span-1">
                                         <label className="block text-xs font-semibold text-gray-500 mb-1">수량</label>
-                                        <input type="number" className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-center font-bold focus:ring-1 focus:ring-blue-500 outline-none" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} />
+                                        <input 
+                                            type="number" 
+                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-center font-bold focus:ring-1 focus:ring-blue-500 outline-none" 
+                                            value={formData.quantity} 
+                                            onChange={e => setFormData({...formData, quantity: e.target.value})}
+                                            onFocus={(e) => e.target.select()} // 클릭 시 전체 선택
+                                        />
                                     </div>
                                     <div className="col-span-2">
                                         <label className="block text-xs font-semibold text-gray-500 mb-1">단가</label>
-                                        <input type="number" className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-right font-bold focus:ring-1 focus:ring-blue-500 outline-none" value={formData.unitPrice} onChange={e => setFormData({...formData, unitPrice: e.target.value})} />
+                                        <input 
+                                            type="number" 
+                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-right font-bold focus:ring-1 focus:ring-blue-500 outline-none" 
+                                            value={formData.unitPrice} 
+                                            onChange={e => setFormData({...formData, unitPrice: e.target.value})}
+                                            onFocus={(e) => e.target.select()} // 클릭 시 전체 선택
+                                        />
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-xs font-semibold text-gray-500 mb-1">지출(비용)</label>
-                                        <input type="number" className="w-full px-3 py-2 bg-red-50 border border-red-100 rounded-lg text-sm text-red-600 font-bold focus:ring-1 focus:ring-red-500 outline-none" value={formData.expense} onChange={e => setFormData({...formData, expense: e.target.value})} />
-                                    </div>
-                                    <div className="flex flex-col justify-end pb-1 text-right">
-                                        <div className="text-xs text-gray-400">예상 매출</div>
-                                        <div className="text-lg font-bold text-blue-600">{formatCurrency(formData.quantity * formData.unitPrice)}</div>
-                                    </div>
-                                </div>
+                                {/* 지출, 예상 매출 섹션 삭제됨 */}
 
                                 <div>
                                     <label className="block text-xs font-semibold text-gray-500 mb-1">비고</label>
-                                    <textarea className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm h-14 resize-none focus:ring-1 focus:ring-blue-500 outline-none" placeholder="메모 입력" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+                                    <textarea className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm h-16 resize-none focus:ring-1 focus:ring-blue-500 outline-none" placeholder="메모 입력" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
                                 </div>
 
-                                {/* 하단 버튼 (높이 축소) */}
+                                {/* 하단 버튼 */}
                                 <div className="flex gap-2 pt-2">
                                     {editingTask && (
                                         <button onClick={handleDelete} className="bg-red-50 text-red-500 w-12 rounded-lg flex items-center justify-center border border-red-100"><Trash2 size={18}/></button>
@@ -451,20 +453,19 @@
                                     </button>
                                 </div>
                             </div>
-                            {/* 모바일 키보드 공간 확보용 하단 여백 */}
-                            <div className="h-4 bg-white"></div>
+                            <div className="h-2 bg-white"></div>
                         </div>
                     </div>
                 )}
                 
-                {/* 기타 모달들 (간소화) */}
+                {/* 기타 모달들 */}
                 {isSettlementModalOpen && <SettlementPreviewModal tasks={completedTasks.filter(t=>t.status==='completed')} onClose={()=>setIsSettlementModalOpen(false)} onConfirm={async ()=>{ const batch=writeBatch(db); completedTasks.filter(t=>t.status==='completed').forEach(t=>batch.update(doc(db,`artifacts/${appId}/public/data/tasks`,t.id),{status:'settlement_requested', settlementDate:serverTimestamp()})); await batch.commit(); setIsSettlementModalOpen(false); }} />}
                 {isProductModalOpen && <ProductManagerModal onClose={()=>setIsProductModalOpen(false)} products={products} db={db} appId={appId} />}
             </div>
         );
     };
 
-    // --- 서브 컴포넌트: 아이템 (디자인 개선) ---
+    // --- 서브 컴포넌트: 아이템 ---
     const TaskItem = ({ task, onClick, onStatusChange, readonly }) => {
         const conf = STATUS_MAP[task.status] || STATUS_MAP['ready'];
         return (
