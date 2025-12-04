@@ -55,7 +55,7 @@
     import { initializeApp } from "firebase/app";
     import { getAuth, signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence } from "firebase/auth";
     import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, query, onSnapshot, serverTimestamp, writeBatch, getDoc, setDoc, orderBy } from "firebase/firestore";
-    import { Plus, CheckCircle, Settings, ClipboardList, TrendingUp, DollarSign, Trash2, X, ChevronDown, Lock, Copy, Database, Users, FileText, Calendar, CheckSquare, Search, Info } from 'lucide-react';
+    import { Plus, CheckCircle, Settings, ClipboardList, TrendingUp, DollarSign, Trash2, X, ChevronDown, Lock, Copy, Database, Users, FileText, Calendar, CheckSquare, Search, Info, RotateCcw } from 'lucide-react';
 
     // --- Firebase 설정 ---
     const firebaseConfig = {
@@ -143,6 +143,16 @@
             }
         };
 
+        const resetPin = () => {
+            if(confirm('기기에 저장된 PIN 번호를 초기화하시겠습니까?\n초기화 후 새 비밀번호를 설정할 수 있습니다.')) {
+                localStorage.removeItem(SHARED_PIN_KEY);
+                setPin(['','','','']);
+                setError('');
+                alert('PIN이 초기화되었습니다. 원하는 번호를 입력하여 새로 설정하세요.');
+                inputRefs.current[0].focus();
+            }
+        };
+
         return (
             <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center p-6 animate-fade-in">
                 <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center mb-4 text-blue-600"><Lock size={24} /></div>
@@ -152,7 +162,11 @@
                         <input key={idx} ref={el => inputRefs.current[idx] = el} type="password" inputMode="numeric" maxLength={1} className="w-12 h-12 text-center text-xl border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none bg-gray-50 focus:bg-white" value={digit} onChange={(e) => handleInput(idx, e.target.value)} />
                     ))}
                 </div>
-                {error && <p className="text-red-500 text-xs animate-pulse">{error}</p>}
+                {error && <p className="text-red-500 text-xs animate-pulse mb-4">{error}</p>}
+                
+                <button onClick={resetPin} className="text-gray-400 text-xs underline hover:text-gray-600 mt-4">
+                    PIN 초기화 (비밀번호 분실)
+                </button>
             </div>
         );
     };
@@ -358,7 +372,29 @@
     const ProductManagerModal = ({ onClose, products, db, appId }) => {
         const [name, setName] = useState(''); const [price, setPrice] = useState('');
         const add = async () => { if(name) { await addDoc(collection(db, `artifacts/${appId}/public/data/products`), {name, defaultUnitPrice:Number(price)}); setName(''); } };
-        return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6 backdrop-blur-sm"><div className="bg-white w-full max-w-sm rounded-2xl shadow-xl overflow-hidden"><div className="p-3 border-b flex justify-between font-bold items-center"><span>제품 관리</span><button onClick={onClose}><X size={18}/></button></div><div className="p-3 bg-gray-50 border-b flex gap-2"><input className="flex-1 p-2 border rounded-lg text-sm" placeholder="제품명" value={name} onChange={e=>setName(e.target.value)}/><input type="number" className="w-20 p-2 border rounded-lg text-sm" placeholder="단가" value={price} onChange={e=>setPrice(e.target.value)}/><button onClick={add} className="bg-green-500 text-white px-3 rounded-lg text-sm font-bold">추가</button></div><div className="max-h-60 overflow-y-auto p-2">{products.map(p=><div key={p.id} className="flex justify-between p-2 border-b text-sm items-center"><span>{p.name} <span className="text-gray-400 text-xs">({formatCurrency(p.defaultUnitPrice)})</span></span><button onClick={()=>deleteDoc(doc(db,`artifacts/${appId}/public/data/products`,p.id))} className="text-red-400"><Trash2 size={14}/></button></div>)}</div></div></div>;
+        const handleResetPin = () => {
+            if(confirm('이 기기의 PIN 번호를 재설정하시겠습니까?\n앱이 새로고침됩니다.')) {
+                localStorage.removeItem(`sales_app_pin_${appId}`);
+                window.location.reload();
+            }
+        };
+        
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6 backdrop-blur-sm">
+                <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[80vh]">
+                    <div className="p-3 border-b flex justify-between font-bold items-center"><span>제품 관리</span><button onClick={onClose}><X size={18}/></button></div>
+                    <div className="p-3 bg-gray-50 border-b flex gap-2"><input className="flex-1 p-2 border rounded-lg text-sm" placeholder="제품명" value={name} onChange={e=>setName(e.target.value)}/><input type="number" className="w-20 p-2 border rounded-lg text-sm" placeholder="단가" value={price} onChange={e=>setPrice(e.target.value)}/><button onClick={add} className="bg-green-500 text-white px-3 rounded-lg text-sm font-bold">추가</button></div>
+                    <div className="flex-1 overflow-y-auto p-2">{products.map(p=><div key={p.id} className="flex justify-between p-2 border-b text-sm items-center"><span>{p.name} <span className="text-gray-400 text-xs">({formatCurrency(p.defaultUnitPrice)})</span></span><button onClick={()=>deleteDoc(doc(db,`artifacts/${appId}/public/data/products`,p.id))} className="text-red-400"><Trash2 size={14}/></button></div>)}</div>
+                    
+                    <div className="p-3 border-t bg-gray-50">
+                        <h4 className="text-xs font-bold text-gray-500 mb-2">앱 설정</h4>
+                        <button onClick={handleResetPin} className="w-full bg-white border border-gray-300 text-gray-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-gray-50">
+                            <RotateCcw size={12} /> PIN 번호 변경
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
     };
 
     const SettlementPreviewModal = ({ tasks, onClose, onConfirm }) => {
@@ -442,7 +478,6 @@
                     }
                 </div>
 
-                {/* 통계 상세 팝업 */}
                 {selectedTask && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onClick={() => setSelectedTask(null)}>
                         <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -454,34 +489,19 @@
                                 <div className="grid grid-cols-3 gap-y-3 gap-x-2">
                                     <div className="text-gray-500 text-xs">날짜</div>
                                     <div className="col-span-2 font-medium">{formatFullDate(selectedTask.paymentDate || selectedTask.updatedAt)}</div>
-                                    
                                     <div className="text-gray-500 text-xs">거래처</div>
                                     <div className="col-span-2 font-medium">{selectedTask.client}</div>
-                                    
                                     <div className="text-gray-500 text-xs">제품명</div>
                                     <div className="col-span-2 font-bold text-gray-800">{selectedTask.productName}</div>
-                                    
                                     <div className="text-gray-500 text-xs">수량 / 단가</div>
                                     <div className="col-span-2">{selectedTask.quantity}개 <span className="text-gray-400 mx-1">x</span> {formatCurrency(selectedTask.unitPrice)}</div>
-                                    
                                     <div className="text-gray-500 text-xs pt-2 border-t mt-1">합계</div>
                                     <div className="col-span-2 font-bold text-blue-600 text-lg pt-2 border-t mt-1">{formatCurrency(selectedTask.revenue)}</div>
-
-                                    {selectedTask.description && (
-                                        <>
-                                            <div className="text-gray-500 text-xs">메모</div>
-                                            <div className="col-span-2 bg-gray-50 p-2 rounded text-gray-600 text-xs">{selectedTask.description}</div>
-                                        </>
-                                    )}
+                                    {selectedTask.description && <><div className="text-gray-500 text-xs">메모</div><div className="col-span-2 bg-gray-50 p-2 rounded text-gray-600 text-xs">{selectedTask.description}</div></>}
                                 </div>
                             </div>
                             <div className="p-4 border-t bg-gray-50 flex justify-end">
-                                <button 
-                                    onClick={() => handleDeleteStatsItem(selectedTask.id)} 
-                                    className="bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1 transition"
-                                >
-                                    <Trash2 size={14}/> 삭제하기
-                                </button>
+                                <button onClick={() => handleDeleteStatsItem(selectedTask.id)} className="bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1 transition"><Trash2 size={14}/> 삭제하기</button>
                             </div>
                         </div>
                     </div>
