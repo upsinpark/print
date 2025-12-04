@@ -113,6 +113,10 @@
         const d = date.seconds ? new Date(date.seconds * 1000) : new Date(date);
         return `${d.getMonth()+1}/${d.getDate()}`;
     };
+    // YYYY-MM-DD 형식 반환 (input date용)
+    const toInputDate = (date) => {
+        return date.toISOString().split('T')[0];
+    };
 
     // 상태 정의
     const STATUS_MAP = {
@@ -333,12 +337,12 @@
         };
         const closeTaskModal = () => { setIsTaskModalOpen(false); setEditingTask(null); };
 
-        // 그룹화 및 데이터 가공
+        // 그룹화 및 데이터 가공 (완료 탭에서 '지급(paid)' 상태 제외)
         const groupedTasks = useMemo(() => {
             const groups = {};
             const targetTasks = activeTab === 'progress' 
                 ? tasks.filter(t => ['ready', 'processing'].includes(t.status))
-                : tasks.filter(t => ['completed', 'paid'].includes(t.status));
+                : tasks.filter(t => ['completed', 'settlement_requested'].includes(t.status)); // Paid 제외됨
             
             targetTasks.forEach(t => {
                 const client = t.client || '미지정';
@@ -368,7 +372,7 @@
                         <button onClick={() => setIsProductModalOpen(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-400"><Settings size={16}/></button>
                     </div>
                     <div className="flex px-2">
-                        {[ { id: 'progress', label: '진행중', icon: ClipboardList }, { id: 'completed', label: '완료/지급', icon: CheckCircle }, { id: 'stats', label: '통계', icon: TrendingUp } ].map(tab => (
+                        {[ { id: 'progress', label: '진행중', icon: ClipboardList }, { id: 'completed', label: '완료/정산', icon: CheckCircle }, { id: 'stats', label: '통계', icon: TrendingUp } ].map(tab => (
                             <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 py-2 text-xs font-medium flex justify-center items-center gap-1 relative ${activeTab === tab.id ? 'text-blue-600' : 'text-gray-400'}`}>
                                 <tab.icon size={14} />{tab.label}
                                 {activeTab === tab.id && <div className="absolute bottom-0 w-8 h-0.5 bg-blue-600 rounded-full"></div>}
@@ -409,7 +413,6 @@
                                         </div>
                                         <div className="divide-y divide-gray-50">
                                             {clientTasks.map(task => {
-                                                // 탭에 따라 다른 레이아웃 적용
                                                 if (activeTab === 'completed') {
                                                     // 완료 탭: 제품명 수량 단가 합계 상태 날짜 (왼쪽 정렬)
                                                     return (
@@ -589,12 +592,65 @@
         );
     };
 
-    // --- 서브: 통계 ---
+    // --- 서브: 통계 (기간 검색 기능 추가) ---
     const StatsView = ({ tasks }) => {
-        const [m, setM] = useState(new Date().toISOString().slice(0,7));
-        const f = tasks.filter(t => t.paymentDate && formatDate(t.paymentDate).startsWith(parseInt(m.slice(5)))); 
-        const tot = f.reduce((a,b)=>a+b.revenue,0);
-        return <div className="animate-fade-in"><div className="bg-white border rounded-xl p-4 mb-4"><div className="flex justify-between items-center mb-2"><span className="text-sm font-bold text-gray-500">이번 달 순수익</span><input type="month" value={m} onChange={e=>setM(e.target.value)} className="text-xs border rounded p-1"/></div><div className="text-2xl font-bold text-blue-600">{formatCurrency(tot)}</div></div><div className="bg-white border rounded-xl overflow-hidden"><div className="bg-gray-50 px-4 py-2 text-xs font-bold text-gray-500">지급 완료 목록</div>{f.map(t=><div key={t.id} className="p-3 border-b last:border-0 flex justify-between text-sm"><span>{t.productName}</span><span className="font-bold text-green-600">+{formatCurrency(t.revenue)}</span></div>)}</div></div>;
+        const today = new Date();
+        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+        const [start, setStart] = useState(toInputDate(firstDay));
+        const [end, setEnd] = useState(toInputDate(today));
+
+        const filtered = useMemo(() => {
+            return tasks.filter(t => {
+                if (!t.paymentDate) return false;
+                const d = t.paymentDate.seconds ? new Date(t.paymentDate.seconds * 1000) : new Date(t.paymentDate);
+                const dateStr = toInputDate(d);
+                return dateStr >= start && dateStr <= end;
+            });
+        }, [tasks, start, end]);
+
+        const tot = filtered.reduce((a,b)=>a+b.revenue,0);
+
+        return (
+            <div className="animate-fade-in pb-16">
+                {/* 기간 설정 & 총액 카드 */}
+                <div className="bg-white border border-gray-100 rounded-xl p-4 mb-3 shadow-sm">
+                    <div className="flex gap-2 mb-4">
+                        <div className="flex-1">
+                            <label className="block text-[10px] text-gray-400 mb-1">시작일</label>
+                            <input type="date" value={start} onChange={e=>setStart(e.target.value)} className="w-full text-xs border border-gray-200 rounded p-1.5 bg-gray-50"/>
+                        </div>
+                        <div className="flex-1">
+                            <label className="block text-[10px] text-gray-400 mb-1">종료일</label>
+                            <input type="date" value={end} onChange={e=>setEnd(e.target.value)} className="w-full text-xs border border-gray-200 rounded p-1.5 bg-gray-50"/>
+                        </div>
+                    </div>
+                    <div className="flex justify-between items-end border-t border-gray-50 pt-3">
+                        <span className="text-xs font-bold text-gray-500">기간 내 지급완료</span>
+                        <div className="text-xl font-bold text-blue-600">{formatCurrency(tot)}</div>
+                    </div>
+                </div>
+
+                {/* 지급 완료 리스트 */}
+                <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
+                    <div className="bg-gray-50 px-4 py-2 text-xs font-bold text-gray-600 border-b border-gray-100 flex justify-between">
+                        <span>상세 내역</span>
+                        <span className="bg-white border px-1.5 rounded text-gray-400">{filtered.length}건</span>
+                    </div>
+                    {filtered.length === 0 ? <div className="p-6 text-center text-gray-300 text-xs">기간 내 내역이 없습니다.</div> :
+                        <div className="divide-y divide-gray-50">
+                            {filtered.map(t => (
+                                <div key={t.id} className="p-3 flex items-center text-xs gap-2">
+                                    <div className="text-gray-400 w-16 text-[10px] whitespace-nowrap">{formatDate(t.paymentDate)}</div>
+                                    <div className="font-bold text-gray-800 flex-1 truncate">{t.productName}</div>
+                                    <div className="text-gray-500 w-12 text-right">{t.quantity}개</div>
+                                    <div className="font-bold text-blue-600 w-16 text-right">{formatCurrency(t.revenue)}</div>
+                                </div>
+                            ))}
+                        </div>
+                    }
+                </div>
+            </div>
+        );
     };
 
     const root = createRoot(document.getElementById('root'));
