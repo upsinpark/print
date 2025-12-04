@@ -84,7 +84,7 @@
     } from "firebase/firestore";
     import { 
         Plus, CheckCircle, Settings, ClipboardList, TrendingUp, 
-        DollarSign, Trash2, X, ChevronDown, Lock, Copy, Database, Users, FileText, Calendar
+        DollarSign, Trash2, X, ChevronDown, Lock, Copy, Database, Users, FileText, Calendar, CheckSquare
     } from 'lucide-react';
 
     // =================================================================
@@ -107,19 +107,19 @@
     const db = app ? getFirestore(app) : null;
 
     // --- 유틸리티 ---
-    const formatCurrency = (amount) => new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW' }).format(amount).replace('₩', '') + '원';
+    const formatCurrency = (amount) => new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW' }).format(amount).replace('₩', '');
     const formatDate = (date) => {
         if (!date) return '';
         const d = date.seconds ? new Date(date.seconds * 1000) : new Date(date);
         return `${d.getMonth()+1}/${d.getDate()}`;
     };
 
+    // 상태 정의
     const STATUS_MAP = {
-        'ready': { label: '준비', color: 'text-gray-500 bg-gray-100', dot: 'bg-gray-400' },
-        'processing': { label: '가공', color: 'text-purple-600 bg-purple-50', dot: 'bg-purple-500' },
-        'completed': { label: '완료', color: 'text-blue-600 bg-blue-50', dot: 'bg-blue-500' },
-        'settlement_requested': { label: '청구', color: 'text-amber-600 bg-amber-50', dot: 'bg-amber-500' },
-        'paid': { label: '지급', color: 'text-green-600 bg-green-50', dot: 'bg-green-500' }
+        'ready': { label: '준비', color: 'text-gray-500 bg-gray-100' },
+        'processing': { label: '제판', color: 'text-purple-600 bg-purple-50' },
+        'completed': { label: '완료', color: 'text-blue-600 bg-blue-50' },
+        'paid': { label: '지급', color: 'text-green-600 bg-green-50' }
     };
 
     // --- PIN 인증 컴포넌트 ---
@@ -240,7 +240,7 @@
             return () => { unsubTasks(); unsubClients(); unsubProducts(); };
         }, [db]);
 
-        // 저장 함수 (keepOpen: 저장 후 입력창 유지 여부)
+        // 액션 함수들
         const handleSaveTask = async (keepOpen = false) => {
             if (!formData.client || !formData.productName) { alert("거래처와 제품명을 입력해주세요."); return; }
             const publicPath = `artifacts/${appId}/public/data`;
@@ -266,10 +266,7 @@
                     });
                     
                     if (keepOpen) {
-                        // 연속 입력을 위해 거래처는 유지하고 나머지 초기화
                         setFormData(prev => ({ ...prev, productName: '', quantity: 1, unitPrice: 0, description: '' }));
-                        // 간단한 피드백 (Toast 대신 Alert나 콘솔)
-                        console.log("저장되었습니다. 다음 항목을 입력하세요.");
                     } else {
                         closeTaskModal();
                     }
@@ -302,6 +299,26 @@
             if (status === 'paid') update.paymentDate = serverTimestamp();
             await updateDoc(doc(db, `artifacts/${appId}/public/data/tasks`, id), update);
         };
+
+        const handleBulkPay = async () => {
+            const completedItems = tasks.filter(t => t.status === 'completed');
+            if (completedItems.length === 0) return;
+            
+            if (!confirm(`현재 '완료' 상태인 ${completedItems.length}건을 모두 '지급' 상태로 변경하시겠습니까?`)) return;
+
+            try {
+                const batch = writeBatch(db);
+                completedItems.forEach(t => {
+                    const ref = doc(db, `artifacts/${appId}/public/data/tasks`, t.id);
+                    batch.update(ref, { status: 'paid', paymentDate: serverTimestamp() });
+                });
+                await batch.commit();
+                alert("일괄 변경되었습니다.");
+            } catch (e) {
+                console.error(e);
+                alert("오류가 발생했습니다.");
+            }
+        };
         
         const openTaskModal = (task = null) => {
             setEditingTask(task);
@@ -316,12 +333,12 @@
         };
         const closeTaskModal = () => { setIsTaskModalOpen(false); setEditingTask(null); };
 
-        // 그룹화 로직
+        // 그룹화 및 데이터 가공
         const groupedTasks = useMemo(() => {
             const groups = {};
             const targetTasks = activeTab === 'progress' 
                 ? tasks.filter(t => ['ready', 'processing'].includes(t.status))
-                : tasks.filter(t => ['completed', 'settlement_requested'].includes(t.status));
+                : tasks.filter(t => ['completed', 'paid'].includes(t.status));
             
             targetTasks.forEach(t => {
                 const client = t.client || '미지정';
@@ -330,6 +347,11 @@
             });
             return groups;
         }, [tasks, activeTab]);
+
+        // 명세서용 데이터 (완료 탭에서 사용하는 데이터 중 '완료' 상태인 것만)
+        const settlementTasks = useMemo(() => {
+            return tasks.filter(t => t.status === 'completed');
+        }, [tasks]);
 
         if (!app) return <div className="p-10 text-center font-bold text-red-500">설정 오류</div>;
         if (!isAuthenticated) return <PinAuth onAuthenticated={() => { setIsAuthenticated(true); sessionStorage.setItem('pin_verified', 'true'); }} />;
@@ -346,7 +368,7 @@
                         <button onClick={() => setIsProductModalOpen(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-400"><Settings size={16}/></button>
                     </div>
                     <div className="flex px-2">
-                        {[ { id: 'progress', label: '진행중', icon: ClipboardList }, { id: 'completed', label: '완료/정산', icon: CheckCircle }, { id: 'stats', label: '통계', icon: TrendingUp } ].map(tab => (
+                        {[ { id: 'progress', label: '진행중', icon: ClipboardList }, { id: 'completed', label: '완료/지급', icon: CheckCircle }, { id: 'stats', label: '통계', icon: TrendingUp } ].map(tab => (
                             <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 py-2 text-xs font-medium flex justify-center items-center gap-1 relative ${activeTab === tab.id ? 'text-blue-600' : 'text-gray-400'}`}>
                                 <tab.icon size={14} />{tab.label}
                                 {activeTab === tab.id && <div className="absolute bottom-0 w-8 h-0.5 bg-blue-600 rounded-full"></div>}
@@ -356,56 +378,79 @@
                 </header>
 
                 <main className="p-3 space-y-3">
-                    {/* 목록 뷰 (진행중 & 완료) */}
+                    {/* 완료 탭 상단 버튼들 */}
+                    {activeTab === 'completed' && (
+                        <div className="flex justify-end gap-2 mb-2">
+                            <button 
+                                onClick={() => setIsSettlementModalOpen(true)}
+                                className="bg-amber-100 text-amber-700 text-xs font-bold py-2 px-3 rounded-lg flex items-center gap-1 shadow-sm transition active:scale-95"
+                            >
+                                <ClipboardList size={14} /> 정산 명세서
+                            </button>
+                            <button 
+                                onClick={handleBulkPay}
+                                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded-lg flex items-center gap-1 shadow-sm transition active:scale-95"
+                            >
+                                <CheckSquare size={14} /> 전체 지급 처리
+                            </button>
+                        </div>
+                    )}
+
+                    {/* 목록 뷰 */}
                     {(activeTab === 'progress' || activeTab === 'completed') && (
                         <div className="animate-fade-in pb-16">
                             {Object.keys(groupedTasks).length === 0 ? 
                                 <div className="py-20 text-center text-gray-300 text-xs">내역이 없습니다.</div> : 
                                 Object.entries(groupedTasks).map(([client, clientTasks]) => (
                                     <div key={client} className="mb-3 bg-white border border-gray-100 rounded-lg shadow-sm overflow-hidden">
-                                        {/* 거래처 헤더 */}
                                         <div className="bg-gray-50 px-3 py-1.5 border-b border-gray-100 flex justify-between items-center">
                                             <span className="font-bold text-sm text-gray-700">{client}</span>
                                             <span className="text-[10px] bg-white border px-1.5 rounded text-gray-500">{clientTasks.length}건</span>
                                         </div>
-                                        {/* 작업 리스트 (한줄 보기) */}
                                         <div className="divide-y divide-gray-50">
-                                            {clientTasks.map(task => (
-                                                <div key={task.id} onClick={() => openTaskModal(task)} className="flex items-center p-2.5 hover:bg-blue-50 active:bg-blue-50 transition cursor-pointer">
-                                                    {/* 제품명 (강조) */}
-                                                    <div className="font-bold text-gray-800 text-sm truncate mr-2 flex-1 min-w-0">
-                                                        {task.productName}
-                                                    </div>
-                                                    
-                                                    {/* 수량 (배지 형태) */}
-                                                    <div className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs font-bold mr-2 whitespace-nowrap">
-                                                        {task.quantity}
-                                                    </div>
-
-                                                    {/* 상태 (아이콘/텍스트) */}
-                                                    <div className="mr-2" onClick={e => e.stopPropagation()}>
-                                                        <select 
-                                                            value={task.status} 
-                                                            onChange={e => handleStatus(task.id, e.target.value)}
-                                                            className={`text-[10px] border-none bg-transparent outline-none font-medium cursor-pointer ${STATUS_MAP[task.status].color.split(' ')[0]}`}
-                                                        >
-                                                            {Object.keys(STATUS_MAP).map(k => <option key={k} value={k}>{STATUS_MAP[k].label}</option>)}
-                                                        </select>
-                                                    </div>
-
-                                                    {/* 메모 (아이콘 또는 짧은 텍스트) */}
-                                                    {task.description && (
-                                                        <div className="mr-2 text-gray-400" title={task.description}>
-                                                            <FileText size={12} />
+                                            {clientTasks.map(task => {
+                                                // 탭에 따라 다른 레이아웃 적용
+                                                if (activeTab === 'completed') {
+                                                    // 완료 탭: 제품명 수량 단가 합계 상태 날짜 (왼쪽 정렬)
+                                                    return (
+                                                        <div key={task.id} onClick={() => openTaskModal(task)} className="flex items-center p-2.5 hover:bg-blue-50 active:bg-blue-50 transition cursor-pointer text-xs gap-2">
+                                                            <div className="font-bold text-gray-800 w-24 truncate">{task.productName}</div>
+                                                            <div className="w-10 text-blue-600 font-bold whitespace-nowrap">{task.quantity}개</div>
+                                                            <div className="w-14 text-gray-500 text-right">{formatCurrency(task.unitPrice)}</div>
+                                                            <div className="w-16 font-bold text-gray-800 text-right">{formatCurrency(task.revenue)}</div>
+                                                            <div onClick={e => e.stopPropagation()} className="w-10 text-center">
+                                                                <select 
+                                                                    value={task.status} 
+                                                                    onChange={e => handleStatus(task.id, e.target.value)}
+                                                                    className={`text-[10px] bg-transparent outline-none font-bold cursor-pointer ${STATUS_MAP[task.status].color.split(' ')[0]}`}
+                                                                >
+                                                                    {Object.keys(STATUS_MAP).map(k => <option key={k} value={k}>{STATUS_MAP[k].label}</option>)}
+                                                                </select>
+                                                            </div>
+                                                            <div className="text-gray-400 text-[10px] ml-auto whitespace-nowrap">{formatDate(task.updatedAt || task.createdAt)}</div>
                                                         </div>
-                                                    )}
-
-                                                    {/* 날짜 */}
-                                                    <div className="text-[10px] text-gray-400 whitespace-nowrap">
-                                                        {formatDate(task.updatedAt || task.createdAt)}
-                                                    </div>
-                                                </div>
-                                            ))}
+                                                    );
+                                                } else {
+                                                    // 진행중 탭: 기존 레이아웃 유지
+                                                    return (
+                                                        <div key={task.id} onClick={() => openTaskModal(task)} className="flex items-center p-2.5 hover:bg-blue-50 active:bg-blue-50 transition cursor-pointer gap-2">
+                                                            <div className="font-bold text-gray-800 text-sm truncate flex-1 min-w-0">{task.productName}</div>
+                                                            <div className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs font-bold mr-1 whitespace-nowrap">{task.quantity}</div>
+                                                            <div onClick={e => e.stopPropagation()}>
+                                                                <select 
+                                                                    value={task.status} 
+                                                                    onChange={e => handleStatus(task.id, e.target.value)}
+                                                                    className={`text-[11px] bg-transparent outline-none font-bold cursor-pointer ${STATUS_MAP[task.status].color.split(' ')[0]}`}
+                                                                >
+                                                                    {Object.keys(STATUS_MAP).map(k => <option key={k} value={k}>{STATUS_MAP[k].label}</option>)}
+                                                                </select>
+                                                            </div>
+                                                            {task.description && <div className="text-gray-400" title={task.description}><FileText size={12} /></div>}
+                                                            <div className="text-[10px] text-gray-400 whitespace-nowrap">{formatDate(task.updatedAt || task.createdAt)}</div>
+                                                        </div>
+                                                    );
+                                                }
+                                            })}
                                         </div>
                                     </div>
                                 ))
@@ -413,18 +458,10 @@
                         </div>
                     )}
 
-                    {activeTab === 'completed' && Object.keys(groupedTasks).length > 0 && (
-                        <div className="fixed bottom-20 left-0 right-0 flex justify-center pointer-events-none">
-                             <button onClick={() => setIsSettlementModalOpen(true)} className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg pointer-events-auto flex items-center gap-1">
-                                <ClipboardList size={14}/> 정산 명세서 보기
-                            </button>
-                        </div>
-                    )}
-
                     {activeTab === 'stats' && <StatsView tasks={tasks.filter(t=>t.status==='paid')} />}
                 </main>
 
-                {/* 플로팅 등록 버튼 (우측 하단) */}
+                {/* 플로팅 등록 버튼 */}
                 {activeTab === 'progress' && (
                     <button 
                         onClick={() => openTaskModal()} 
@@ -434,24 +471,21 @@
                     </button>
                 )}
 
-                {/* --- 입력 팝업 (상단 배치 & 최적화) --- */}
+                {/* --- 입력 팝업 --- */}
                 {isTaskModalOpen && (
                     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm animate-fade-in pt-4">
                         <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl animate-slide-up overflow-hidden mx-4">
-                            {/* 헤더 */}
                             <div className="px-4 py-2.5 border-b flex justify-between items-center bg-gray-50">
                                 <h3 className="font-bold text-gray-800 text-sm">{editingTask ? '작업 수정' : '새 작업 등록'}</h3>
                                 <button onClick={closeTaskModal} className="w-6 h-6 flex items-center justify-center bg-gray-200 rounded-full text-gray-500 hover:bg-gray-300"><X size={14}/></button>
                             </div>
                             
                             <div className="p-4 space-y-3">
-                                {/* 거래처 / 제품명 */}
                                 <div className="grid grid-cols-2 gap-2">
                                     <CompactAutocomplete label="거래처" placeholder="입력" value={formData.client} onChange={v => setFormData({...formData, client: v})} options={clients} />
                                     <CompactAutocomplete label="제품명" placeholder="입력" value={formData.productName} onChange={v => setFormData({...formData, productName: v})} options={products} onSelect={p => setFormData(prev => ({...prev, unitPrice: p.defaultUnitPrice || 0}))} />
                                 </div>
 
-                                {/* 수량 / 단가 */}
                                 <div className="grid grid-cols-3 gap-2">
                                     <div className="col-span-1">
                                         <label className="block text-xs font-semibold text-gray-500 mb-1">수량</label>
@@ -475,9 +509,7 @@
                                     </div>
                                 </div>
 
-                                {/* 버튼 영역 (비고 위로 이동) */}
                                 <div className="grid grid-cols-2 gap-2 pt-1">
-                                    {/* 수정 모드일 때 삭제 버튼 표시 */}
                                     {editingTask ? (
                                         <button onClick={handleDelete} className="bg-red-50 text-red-500 py-2.5 rounded font-bold text-xs border border-red-100">삭제</button>
                                     ) : (
@@ -490,7 +522,6 @@
                                     </button>
                                 </div>
 
-                                {/* 비고 (맨 아래) */}
                                 <div>
                                     <label className="block text-xs font-semibold text-gray-500 mb-1">비고 (선택)</label>
                                     <textarea className="w-full px-2 py-2 bg-gray-50 border border-gray-200 rounded text-sm h-12 resize-none focus:ring-1 focus:ring-blue-500 outline-none" placeholder="특이사항 메모" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
@@ -500,8 +531,22 @@
                     </div>
                 )}
                 
-                {isSettlementModalOpen && <SettlementPreviewModal tasks={completedTasks.filter(t=>t.status==='completed')} onClose={()=>setIsSettlementModalOpen(false)} onConfirm={async ()=>{ const batch=writeBatch(db); completedTasks.filter(t=>t.status==='completed').forEach(t=>batch.update(doc(db,`artifacts/${appId}/public/data/tasks`,t.id),{status:'settlement_requested', settlementDate:serverTimestamp()})); await batch.commit(); setIsSettlementModalOpen(false); }} />}
                 {isProductModalOpen && <ProductManagerModal onClose={()=>setIsProductModalOpen(false)} products={products} db={db} appId={appId} />}
+                
+                {/* 정산 명세서 모달 */}
+                {isSettlementModalOpen && (
+                    <SettlementPreviewModal 
+                        tasks={settlementTasks} 
+                        onClose={() => setIsSettlementModalOpen(false)} 
+                        onConfirm={async () => { 
+                            if(!confirm('명세서에 포함된 항목들을 청구 상태로 변경하시겠습니까?')) return;
+                            const batch = writeBatch(db); 
+                            settlementTasks.forEach(t => batch.update(doc(db, `artifacts/${appId}/public/data/tasks`, t.id), { status: 'settlement_requested', settlementDate: serverTimestamp() })); 
+                            await batch.commit(); 
+                            setIsSettlementModalOpen(false); 
+                        }} 
+                    />
+                )}
             </div>
         );
     };
@@ -515,15 +560,39 @@
 
     // --- 서브: 정산 미리보기 ---
     const SettlementPreviewModal = ({ tasks, onClose, onConfirm }) => {
-        const txt = useMemo(() => { let t = `[정산요청] ${new Date().toLocaleDateString()}\n`; const g = {}; tasks.forEach(i => { const c = i.client||'기타'; if(!g[c]) g[c]=[]; g[c].push(i); }); let tot=0; Object.entries(g).forEach(([c,l]) => { t += `\n■ ${c}\n`; l.forEach(i => { t += `- ${i.productName} (${i.quantity}개): ${formatCurrency(i.revenue)}\n`; tot+=i.revenue; }); }); t += `\n총액: ${formatCurrency(tot)}`; return t; }, [tasks]);
+        const txt = useMemo(() => { 
+            let t = `[정산요청] ${new Date().toLocaleDateString()}\n`; 
+            const g = {}; 
+            tasks.forEach(i => { const c = i.client||'기타'; if(!g[c]) g[c]=[]; g[c].push(i); }); 
+            let tot=0; 
+            Object.entries(g).forEach(([c,l]) => { 
+                t += `\n■ ${c}\n`; 
+                l.forEach(i => { t += `- ${i.productName} (${i.quantity}개): ${formatCurrency(i.revenue)}\n`; tot+=i.revenue; }); 
+            }); 
+            t += `\n----------------\n총액: ${formatCurrency(tot)}`; 
+            return t; 
+        }, [tasks]);
+        
         const copy = () => { navigator.clipboard.writeText(txt).then(()=>alert("복사됨")); };
-        return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"><div className="bg-white w-full max-w-sm rounded-2xl shadow-xl flex flex-col max-h-[80vh]"><div className="p-3 border-b flex justify-between font-bold"><span>미리보기</span><button onClick={onClose}><X size={18}/></button></div><pre className="p-4 bg-gray-50 flex-1 overflow-auto text-xs whitespace-pre-wrap leading-relaxed">{txt}</pre><div className="p-3 border-t flex gap-2"><button onClick={copy} className="flex-1 bg-gray-800 text-white py-2 rounded-lg text-sm font-bold">복사</button><button onClick={onConfirm} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-bold">요청 확정</button></div></div></div>;
+        
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
+                <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl flex flex-col max-h-[80vh]">
+                    <div className="p-3 border-b flex justify-between font-bold"><span>미리보기 ({tasks.length}건)</span><button onClick={onClose}><X size={18}/></button></div>
+                    <pre className="p-4 bg-gray-50 flex-1 overflow-auto text-xs whitespace-pre-wrap leading-relaxed">{txt}</pre>
+                    <div className="p-3 border-t flex gap-2">
+                        <button onClick={copy} className="flex-1 bg-gray-800 text-white py-2 rounded-lg text-sm font-bold">복사</button>
+                        <button onClick={onConfirm} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-bold">요청 확정</button>
+                    </div>
+                </div>
+            </div>
+        );
     };
 
     // --- 서브: 통계 ---
     const StatsView = ({ tasks }) => {
         const [m, setM] = useState(new Date().toISOString().slice(0,7));
-        const f = tasks.filter(t => t.paymentDate && formatDate(t.paymentDate).startsWith(parseInt(m.slice(5)))); // 단순 월 필터링
+        const f = tasks.filter(t => t.paymentDate && formatDate(t.paymentDate).startsWith(parseInt(m.slice(5)))); 
         const tot = f.reduce((a,b)=>a+b.revenue,0);
         return <div className="animate-fade-in"><div className="bg-white border rounded-xl p-4 mb-4"><div className="flex justify-between items-center mb-2"><span className="text-sm font-bold text-gray-500">이번 달 순수익</span><input type="month" value={m} onChange={e=>setM(e.target.value)} className="text-xs border rounded p-1"/></div><div className="text-2xl font-bold text-blue-600">{formatCurrency(tot)}</div></div><div className="bg-white border rounded-xl overflow-hidden"><div className="bg-gray-50 px-4 py-2 text-xs font-bold text-gray-500">지급 완료 목록</div>{f.map(t=><div key={t.id} className="p-3 border-b last:border-0 flex justify-between text-sm"><span>{t.productName}</span><span className="font-bold text-green-600">+{formatCurrency(t.revenue)}</span></div>)}</div></div>;
     };
