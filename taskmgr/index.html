@@ -86,16 +86,22 @@
     } from 'lucide-react';
 
     // =================================================================
-    // [설정 영역] 입력해주신 파이어베이스 설정값입니다.
+    // [설정 영역] 파이어베이스 콘솔에서 복사한 SDK 설정을 여기에 붙여넣으세요.
     // =================================================================
     const firebaseConfig = {
-       apiKey: "AIzaSyDvZzIleweh5KhxgEC1MJifXHbmxywzQog",
-       authDomain: "yupj1-32b66.firebaseapp.com",
-       projectId: "yupj1-32b66",
-       storageBucket: "yupj1-32b66.firebasestorage.app",
-       messagingSenderId: "70353187098",
-       appId: "1:70353187098:web:fabf15a6956fa297ef3ca3",
-       measurementId: "G-2YT3GJDGK3"
+        apiKey: "AIzaSyDvZzIleweh5KhxgEC1MJifXHbmxywzQog",
+
+authDomain: "yupj1-32b66.firebaseapp.com",
+
+projectId: "yupj1-32b66",
+
+storageBucket: "yupj1-32b66.firebasestorage.app",
+
+messagingSenderId: "70353187098",
+
+appId: "1:70353187098:web:fabf15a6956fa297ef3ca3",
+
+measurementId: "G-2YT3GJDGK3"
     };
 
     // 앱 고유 ID (데이터 저장 경로 구분용)
@@ -128,12 +134,13 @@
 
     const STATUS_OPTIONS = ['ready', 'processing', 'completed', 'paid'];
 
-    // --- 컴포넌트: PIN 인증 ---
+    // --- 컴포넌트: PIN 인증 (수정됨: 에러 처리 강화) ---
     const PinAuth = ({ userId, onAuthenticated }) => {
         const [pin, setPin] = useState(['', '', '', '']);
         const [mode, setMode] = useState('loading'); 
         const [firstPin, setFirstPin] = useState(null);
         const [error, setError] = useState('');
+        const [isSaving, setIsSaving] = useState(false); // 저장 중 상태 추가
         const inputRefs = useRef([]);
 
         useEffect(() => {
@@ -149,7 +156,9 @@
                     }
                 } catch (e) {
                     console.error("PIN 확인 오류:", e);
-                    setMode('set'); // 에러 시 안전하게 설정 모드로
+                    // 데이터베이스 접근 권한 오류일 가능성이 높음
+                    // 일단 설정 모드로 가되, 에러는 콘솔에 남김
+                    setMode('set'); 
                 }
             };
             checkPinStatus();
@@ -182,11 +191,28 @@
                 inputRefs.current[0].focus();
             } else if (mode === 'confirm') {
                 if (currentPinStr === firstPin) {
-                    await setDoc(doc(db, `artifacts/${appId}/users/${userId}/profile`, 'settings'), {
-                        pinHash: currentPinStr,
-                        pinSetAt: serverTimestamp()
-                    }, { merge: true });
-                    onAuthenticated();
+                    setIsSaving(true); // 로딩 시작
+                    try {
+                        // 여기서 DB 저장이 실패하면 catch로 이동합니다.
+                        await setDoc(doc(db, `artifacts/${appId}/users/${userId}/profile`, 'settings'), {
+                            pinHash: currentPinStr,
+                            pinSetAt: serverTimestamp()
+                        }, { merge: true });
+                        
+                        onAuthenticated();
+                    } catch (e) {
+                        console.error("PIN 저장 오류:", e);
+                        setIsSaving(false);
+                        
+                        // 구체적인 에러 메시지 표시
+                        if (e.code === 'permission-denied') {
+                            alert("데이터 저장 권한이 없습니다.\n파이어베이스 콘솔 -> Firestore Database -> '규칙(Rules)' 탭에서\nallow read, write: if true; 로 설정되어 있는지 확인해주세요.");
+                        } else if (e.code === 'unavailable' || e.message.includes('offline')) {
+                             alert("인터넷 연결을 확인하거나 Firestore 데이터베이스가 생성되었는지 확인해주세요.");
+                        } else {
+                            alert(`PIN 저장 실패 (${e.code}):\n${e.message}`);
+                        }
+                    }
                 } else {
                     setError('PIN이 일치하지 않습니다. 처음부터 다시 설정해주세요.');
                     setMode('set');
@@ -225,7 +251,15 @@
                     ))}
                 </div>
                 {error && <p className="text-red-500 mb-4 text-sm animate-pulse">{error}</p>}
-                <button onClick={handleSubmit} disabled={pin.join('').length !== 4} className="w-full max-w-xs bg-blue-600 text-white py-4 rounded-xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition shadow-lg">확인</button>
+                
+                <button 
+                    onClick={handleSubmit} 
+                    disabled={pin.join('').length !== 4 || isSaving} 
+                    className="w-full max-w-xs bg-blue-600 text-white py-4 rounded-xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition shadow-lg flex items-center justify-center gap-2"
+                >
+                    {isSaving && <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>}
+                    {isSaving ? '저장 중...' : '확인'}
+                </button>
             </div>
         );
     };
