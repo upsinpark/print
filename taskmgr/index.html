@@ -84,7 +84,7 @@
     } from "firebase/firestore";
     import { 
         Plus, CheckCircle, Settings, ClipboardList, TrendingUp, 
-        DollarSign, Trash2, X, ChevronDown, Lock, Copy, Database, Users
+        DollarSign, Trash2, X, ChevronDown, Lock, Copy, Database, Users, FileText, Calendar
     } from 'lucide-react';
 
     // =================================================================
@@ -115,20 +115,18 @@
     };
 
     const STATUS_MAP = {
-        'ready': { label: '준비', color: 'bg-gray-100 text-gray-600 border-gray-300', dot: 'bg-gray-400' },
-        'processing': { label: '가공', color: 'bg-purple-100 text-purple-700 border-purple-200', dot: 'bg-purple-500' },
-        'completed': { label: '완료', color: 'bg-blue-100 text-blue-700 border-blue-200', dot: 'bg-blue-500' },
-        'settlement_requested': { label: '청구됨', color: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
-        'paid': { label: '지급됨', color: 'bg-green-100 text-green-700 border-green-200', dot: 'bg-green-500' }
+        'ready': { label: '준비', color: 'text-gray-500 bg-gray-100', dot: 'bg-gray-400' },
+        'processing': { label: '가공', color: 'text-purple-600 bg-purple-50', dot: 'bg-purple-500' },
+        'completed': { label: '완료', color: 'text-blue-600 bg-blue-50', dot: 'bg-blue-500' },
+        'settlement_requested': { label: '청구', color: 'text-amber-600 bg-amber-50', dot: 'bg-amber-500' },
+        'paid': { label: '지급', color: 'text-green-600 bg-green-50', dot: 'bg-green-500' }
     };
 
-    // --- PIN 인증 컴포넌트 (공용 설정 사용으로 변경) ---
+    // --- PIN 인증 컴포넌트 ---
     const PinAuth = ({ onAuthenticated }) => {
         const [pin, setPin] = useState(['', '', '', '']);
         const [error, setError] = useState('');
         const inputRefs = useRef([]);
-
-        // 간단한 로컬 PIN 인증 (팀 공용 비밀번호 개념)
         const SHARED_PIN_KEY = `sales_app_pin_${appId}`;
 
         const handleInput = (index, value) => {
@@ -139,17 +137,11 @@
             setPin(newPin);
             if (value && index < 3) inputRefs.current[index + 1].focus();
             setError('');
-            
-            // 자동 제출
-            if (index === 3 && value) {
-                checkPin([...newPin.slice(0,3), value].join(''));
-            }
+            if (index === 3 && value) checkPin([...newPin.slice(0,3), value].join(''));
         };
 
         const checkPin = (inputPin) => {
             const savedPin = localStorage.getItem(SHARED_PIN_KEY);
-            
-            // PIN이 아직 설정 안됐으면 최초 설정
             if (!savedPin) {
                 if (confirm(`초기 비밀번호를 '${inputPin}'으로 설정하시겠습니까?`)) {
                     localStorage.setItem(SHARED_PIN_KEY, inputPin);
@@ -160,38 +152,30 @@
                 }
                 return;
             }
-
-            if (inputPin === savedPin) {
-                onAuthenticated();
-            } else {
-                setError('비밀번호가 일치하지 않습니다.');
-                setTimeout(() => {
-                    setPin(['','','','']);
-                    inputRefs.current[0].focus();
-                    setError('');
-                }, 500);
+            if (inputPin === savedPin) onAuthenticated();
+            else {
+                setError('비밀번호 불일치');
+                setTimeout(() => { setPin(['','','','']); inputRefs.current[0].focus(); setError(''); }, 500);
             }
         };
 
         return (
             <div className="fixed inset-0 bg-white z-50 flex flex-col items-center justify-center p-6 animate-fade-in">
-                <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mb-6 text-blue-600 shadow-sm">
-                    <Lock size={28} />
+                <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center mb-4 text-blue-600">
+                    <Lock size={24} />
                 </div>
-                <h2 className="text-xl font-bold mb-2 text-gray-800">잠금 해제</h2>
-                <p className="text-gray-500 mb-8 text-sm">팀 접속 비밀번호 4자리를 입력하세요</p>
-                <div className="flex gap-3 mb-8">
+                <h2 className="text-lg font-bold mb-6 text-gray-800">잠금 해제</h2>
+                <div className="flex gap-3 mb-6">
                     {pin.map((digit, idx) => (
-                        <input key={idx} ref={el => inputRefs.current[idx] = el} type="password" inputMode="numeric" maxLength={1} className="w-12 h-14 text-center text-2xl border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-all bg-gray-50 focus:bg-white shadow-sm" value={digit} onChange={(e) => handleInput(idx, e.target.value)} />
+                        <input key={idx} ref={el => inputRefs.current[idx] = el} type="password" inputMode="numeric" maxLength={1} className="w-12 h-12 text-center text-xl border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none bg-gray-50 focus:bg-white" value={digit} onChange={(e) => handleInput(idx, e.target.value)} />
                     ))}
                 </div>
-                {error && <p className="text-red-500 text-sm font-medium animate-pulse">{error}</p>}
-                {!localStorage.getItem(`sales_app_pin_${appId}`) && <p className="text-xs text-blue-500 mt-4">* 처음 입력하는 번호가 비밀번호로 설정됩니다.</p>}
+                {error && <p className="text-red-500 text-xs animate-pulse">{error}</p>}
             </div>
         );
     };
 
-    // --- 콤팩트한 자동완성 입력 (모달용) ---
+    // --- 콤팩트한 자동완성 입력 ---
     const CompactAutocomplete = ({ label, value, onChange, options, placeholder, type = 'text', onSelect }) => {
         const [show, setShow] = useState(false);
         const filtered = useMemo(() => (!value ? [] : options.filter(opt => opt.name.toLowerCase().includes(value.toLowerCase())).slice(0, 3)), [value, options]);
@@ -201,7 +185,7 @@
                 <label className="block text-xs font-semibold text-gray-500 mb-1">{label}</label>
                 <input 
                     type={type} 
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm transition-all" 
+                    className="w-full px-2 py-2 bg-gray-50 border border-gray-200 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none transition-all" 
                     placeholder={placeholder} 
                     value={value} 
                     onChange={(e) => { onChange(e.target.value); setShow(true); }} 
@@ -209,11 +193,11 @@
                     onBlur={() => setTimeout(() => setShow(false), 200)} 
                 />
                 {show && filtered.length > 0 && (
-                    <div className="absolute z-20 w-full bg-white border border-gray-200 rounded-lg shadow-xl mt-1 max-h-32 overflow-y-auto">
+                    <div className="absolute z-20 w-full bg-white border border-gray-200 rounded shadow-lg mt-1 max-h-32 overflow-y-auto">
                         {filtered.map((opt, idx) => (
-                            <div key={idx} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm border-b last:border-0" onClick={() => { onChange(opt.name); if (onSelect) onSelect(opt); setShow(false); }}>
+                            <div key={idx} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-xs border-b last:border-0" onClick={() => { onChange(opt.name); if (onSelect) onSelect(opt); setShow(false); }}>
                                 <span className="font-medium">{opt.name}</span>
-                                {opt.defaultUnitPrice && <span className="text-xs text-gray-400 ml-1">({formatCurrency(opt.defaultUnitPrice)})</span>}
+                                {opt.defaultUnitPrice && <span className="text-gray-400 ml-1">({formatCurrency(opt.defaultUnitPrice)})</span>}
                             </div>
                         ))}
                     </div>
@@ -229,51 +213,35 @@
         const [activeTab, setActiveTab] = useState('progress');
         const [loading, setLoading] = useState(true);
         
-        // 데이터 상태
         const [tasks, setTasks] = useState([]);
         const [clients, setClients] = useState([]);
         const [products, setProducts] = useState([]);
         
-        // 모달 상태
         const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
         const [editingTask, setEditingTask] = useState(null);
         const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
         const [isProductModalOpen, setIsProductModalOpen] = useState(false);
 
-        // 폼 데이터 (지출 기본값 0, 단가 기본값 0)
         const [formData, setFormData] = useState({ client: '', productName: '', quantity: 1, unitPrice: 0, expense: 0, description: '' });
 
-        // 1. 인증 및 초기화
         useEffect(() => {
             if (!auth) return;
             signInAnonymously(auth).catch(console.error);
             return onAuthStateChanged(auth, (u) => { setUser(u); if(!u) setLoading(false); });
         }, []);
 
-        // 2. 데이터 동기화
         useEffect(() => {
             if (!db) return;
-            
-            // 공용 경로 설정
             const publicPath = `artifacts/${appId}/public/data`;
-
             const tasksQ = query(collection(db, `${publicPath}/tasks`), orderBy('createdAt', 'desc'));
-            const clientsQ = collection(db, `${publicPath}/clients`);
-            const productsQ = collection(db, `${publicPath}/products`);
-
-            const unsubTasks = onSnapshot(tasksQ, (snap) => {
-                setTasks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                setLoading(false);
-            }, (err) => console.error("Tasks Sync Error:", err));
-
-            const unsubClients = onSnapshot(clientsQ, (snap) => setClients(snap.docs.map(d => ({id: d.id, ...d.data()}))));
-            const unsubProducts = onSnapshot(productsQ, (snap) => setProducts(snap.docs.map(d => ({id: d.id, ...d.data()}))));
-
+            const unsubTasks = onSnapshot(tasksQ, (snap) => { setTasks(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setLoading(false); });
+            const unsubClients = onSnapshot(collection(db, `${publicPath}/clients`), (snap) => setClients(snap.docs.map(d => ({id: d.id, ...d.data()}))));
+            const unsubProducts = onSnapshot(collection(db, `${publicPath}/products`), (snap) => setProducts(snap.docs.map(d => ({id: d.id, ...d.data()}))));
             return () => { unsubTasks(); unsubClients(); unsubProducts(); };
         }, [db]);
 
-        // 3. 액션 핸들러
-        const handleSaveTask = async () => {
+        // 저장 함수 (keepOpen: 저장 후 입력창 유지 여부)
+        const handleSaveTask = async (keepOpen = false) => {
             if (!formData.client || !formData.productName) { alert("거래처와 제품명을 입력해주세요."); return; }
             const publicPath = `artifacts/${appId}/public/data`;
             
@@ -281,7 +249,7 @@
                 ...formData,
                 quantity: Number(formData.quantity),
                 unitPrice: Number(formData.unitPrice),
-                expense: 0, // 지출 기능 UI는 삭제했지만 데이터 호환성을 위해 0으로 저장
+                expense: 0,
                 revenue: Number(formData.quantity) * Number(formData.unitPrice),
                 updatedAt: serverTimestamp()
             };
@@ -289,15 +257,24 @@
             try {
                 if (editingTask) {
                     await updateDoc(doc(db, `${publicPath}/tasks`, editingTask.id), taskPayload);
+                    closeTaskModal();
                 } else {
                     await addDoc(collection(db, `${publicPath}/tasks`), {
                         ...taskPayload,
                         status: 'ready',
                         createdAt: serverTimestamp()
                     });
+                    
+                    if (keepOpen) {
+                        // 연속 입력을 위해 거래처는 유지하고 나머지 초기화
+                        setFormData(prev => ({ ...prev, productName: '', quantity: 1, unitPrice: 0, description: '' }));
+                        // 간단한 피드백 (Toast 대신 Alert나 콘솔)
+                        console.log("저장되었습니다. 다음 항목을 입력하세요.");
+                    } else {
+                        closeTaskModal();
+                    }
                 }
 
-                // 마스터 데이터 자동 등록
                 if (!clients.some(c => c.name === formData.client)) addDoc(collection(db, `${publicPath}/clients`), { name: formData.client });
                 
                 const existingProd = products.find(p => p.name === formData.productName);
@@ -307,11 +284,9 @@
                     updateDoc(doc(db, `${publicPath}/products`, existingProd.id), { defaultUnitPrice: Number(formData.unitPrice) });
                 }
 
-                closeTaskModal();
             } catch (e) {
                 console.error(e);
-                if (e.code === 'permission-denied') alert("데이터베이스 권한 오류입니다. Firestore 규칙을 확인해주세요.");
-                else alert("저장 실패: " + e.message);
+                alert("저장 실패: " + e.message);
             }
         };
 
@@ -328,7 +303,6 @@
             await updateDoc(doc(db, `artifacts/${appId}/public/data/tasks`, id), update);
         };
         
-        // 모달 제어
         const openTaskModal = (task = null) => {
             setEditingTask(task);
             setFormData(task ? { 
@@ -336,36 +310,45 @@
                 quantity: task.quantity, unitPrice: task.unitPrice, 
                 expense: task.expense || 0, description: task.description || '' 
             } : { 
-                // 새 작업 등록 시 기본값 설정 (단가 0)
                 client: '', productName: '', quantity: 1, unitPrice: 0, expense: 0, description: '' 
             });
             setIsTaskModalOpen(true);
         };
         const closeTaskModal = () => { setIsTaskModalOpen(false); setEditingTask(null); };
 
-        // 렌더링 준비
-        if (!app) return <div className="p-10 text-center font-bold text-red-500">설정 오류: firebaseConfig가 비어있습니다.</div>;
+        // 그룹화 로직
+        const groupedTasks = useMemo(() => {
+            const groups = {};
+            const targetTasks = activeTab === 'progress' 
+                ? tasks.filter(t => ['ready', 'processing'].includes(t.status))
+                : tasks.filter(t => ['completed', 'settlement_requested'].includes(t.status));
+            
+            targetTasks.forEach(t => {
+                const client = t.client || '미지정';
+                if (!groups[client]) groups[client] = [];
+                groups[client].push(t);
+            });
+            return groups;
+        }, [tasks, activeTab]);
+
+        if (!app) return <div className="p-10 text-center font-bold text-red-500">설정 오류</div>;
         if (!isAuthenticated) return <PinAuth onAuthenticated={() => { setIsAuthenticated(true); sessionStorage.setItem('pin_verified', 'true'); }} />;
         if (loading) return <div className="flex h-screen items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>;
 
-        const progressTasks = tasks.filter(t => ['ready', 'processing'].includes(t.status));
-        const completedTasks = tasks.filter(t => ['completed', 'settlement_requested'].includes(t.status));
-        
         return (
-            <div className="min-h-screen pb-20 md:pb-0 max-w-lg mx-auto bg-white shadow-xl min-h-screen border-x border-gray-100">
+            <div className="min-h-screen pb-20 max-w-lg mx-auto bg-white shadow-xl min-h-screen border-x border-gray-100 relative">
                 {/* 헤더 */}
-                <header className="bg-white/90 backdrop-blur-md sticky top-0 z-10 border-b border-gray-100">
-                    <div className="px-4 py-3 flex justify-between items-center">
-                        <h1 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                            <span className="w-2 h-6 bg-blue-600 rounded-full"></span>
-                            작업관리 <span className="text-xs text-gray-400 font-normal bg-gray-100 px-2 py-0.5 rounded-full">공용</span>
+                <header className="bg-white/95 backdrop-blur-md sticky top-0 z-10 border-b border-gray-100">
+                    <div className="px-4 py-2 flex justify-between items-center">
+                        <h1 className="text-base font-bold text-gray-800 flex items-center gap-2">
+                            작업관리 <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">공용</span>
                         </h1>
-                        <button onClick={() => setIsProductModalOpen(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-500"><Settings size={18}/></button>
+                        <button onClick={() => setIsProductModalOpen(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-400"><Settings size={16}/></button>
                     </div>
                     <div className="flex px-2">
                         {[ { id: 'progress', label: '진행중', icon: ClipboardList }, { id: 'completed', label: '완료/정산', icon: CheckCircle }, { id: 'stats', label: '통계', icon: TrendingUp } ].map(tab => (
-                            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 py-3 text-sm font-medium flex justify-center items-center gap-1.5 relative ${activeTab === tab.id ? 'text-blue-600' : 'text-gray-400'}`}>
-                                <tab.icon size={16} strokeWidth={2.5} />{tab.label}
+                            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 py-2 text-xs font-medium flex justify-center items-center gap-1 relative ${activeTab === tab.id ? 'text-blue-600' : 'text-gray-400'}`}>
+                                <tab.icon size={14} />{tab.label}
                                 {activeTab === tab.id && <div className="absolute bottom-0 w-8 h-0.5 bg-blue-600 rounded-full"></div>}
                             </button>
                         ))}
@@ -373,121 +356,152 @@
                 </header>
 
                 <main className="p-3 space-y-3">
-                    {activeTab === 'progress' && (
-                        <div className="animate-fade-in pb-10">
-                            <button onClick={() => openTaskModal()} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-200 flex items-center justify-center gap-2 transition-transform active:scale-95 mb-4">
-                                <Plus size={18} strokeWidth={3} /> 작업 등록하기
-                            </button>
-                            {progressTasks.length === 0 ? <div className="py-20 text-center text-gray-300 text-sm flex flex-col items-center"><div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mb-2"><ClipboardList size={24} className="opacity-20"/></div>할 일이 없습니다.</div> : 
-                                progressTasks.map(task => <TaskItem key={task.id} task={task} onClick={() => openTaskModal(task)} onStatusChange={handleStatus} />)
+                    {/* 목록 뷰 (진행중 & 완료) */}
+                    {(activeTab === 'progress' || activeTab === 'completed') && (
+                        <div className="animate-fade-in pb-16">
+                            {Object.keys(groupedTasks).length === 0 ? 
+                                <div className="py-20 text-center text-gray-300 text-xs">내역이 없습니다.</div> : 
+                                Object.entries(groupedTasks).map(([client, clientTasks]) => (
+                                    <div key={client} className="mb-3 bg-white border border-gray-100 rounded-lg shadow-sm overflow-hidden">
+                                        {/* 거래처 헤더 */}
+                                        <div className="bg-gray-50 px-3 py-1.5 border-b border-gray-100 flex justify-between items-center">
+                                            <span className="font-bold text-sm text-gray-700">{client}</span>
+                                            <span className="text-[10px] bg-white border px-1.5 rounded text-gray-500">{clientTasks.length}건</span>
+                                        </div>
+                                        {/* 작업 리스트 (한줄 보기) */}
+                                        <div className="divide-y divide-gray-50">
+                                            {clientTasks.map(task => (
+                                                <div key={task.id} onClick={() => openTaskModal(task)} className="flex items-center p-2.5 hover:bg-blue-50 active:bg-blue-50 transition cursor-pointer">
+                                                    {/* 제품명 (강조) */}
+                                                    <div className="font-bold text-gray-800 text-sm truncate mr-2 flex-1 min-w-0">
+                                                        {task.productName}
+                                                    </div>
+                                                    
+                                                    {/* 수량 (배지 형태) */}
+                                                    <div className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs font-bold mr-2 whitespace-nowrap">
+                                                        {task.quantity}
+                                                    </div>
+
+                                                    {/* 상태 (아이콘/텍스트) */}
+                                                    <div className="mr-2" onClick={e => e.stopPropagation()}>
+                                                        <select 
+                                                            value={task.status} 
+                                                            onChange={e => handleStatus(task.id, e.target.value)}
+                                                            className={`text-[10px] border-none bg-transparent outline-none font-medium cursor-pointer ${STATUS_MAP[task.status].color.split(' ')[0]}`}
+                                                        >
+                                                            {Object.keys(STATUS_MAP).map(k => <option key={k} value={k}>{STATUS_MAP[k].label}</option>)}
+                                                        </select>
+                                                    </div>
+
+                                                    {/* 메모 (아이콘 또는 짧은 텍스트) */}
+                                                    {task.description && (
+                                                        <div className="mr-2 text-gray-400" title={task.description}>
+                                                            <FileText size={12} />
+                                                        </div>
+                                                    )}
+
+                                                    {/* 날짜 */}
+                                                    <div className="text-[10px] text-gray-400 whitespace-nowrap">
+                                                        {formatDate(task.updatedAt || task.createdAt)}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))
                             }
                         </div>
                     )}
-                    {activeTab === 'completed' && (
-                        <div className="animate-fade-in pb-10">
-                            <div className="bg-amber-50 border border-amber-100 p-3 rounded-xl flex justify-between items-center mb-3">
-                                <div><div className="text-xs text-amber-700 font-bold mb-0.5">정산 대기금액</div><div className="text-xl font-bold text-amber-900">{formatCurrency(completedTasks.filter(t=>t.status==='completed').reduce((a,b)=>a+b.revenue,0))}</div></div>
-                                <button onClick={() => setIsSettlementModalOpen(true)} className="bg-amber-500 text-white px-3 py-2 rounded-lg text-xs font-bold shadow-sm">명세서</button>
-                            </div>
-                            {completedTasks.map(task => <TaskItem key={task.id} task={task} onClick={() => openTaskModal(task)} onStatusChange={handleStatus} readonly={task.status === 'settlement_requested'} />)}
+
+                    {activeTab === 'completed' && Object.keys(groupedTasks).length > 0 && (
+                        <div className="fixed bottom-20 left-0 right-0 flex justify-center pointer-events-none">
+                             <button onClick={() => setIsSettlementModalOpen(true)} className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg pointer-events-auto flex items-center gap-1">
+                                <ClipboardList size={14}/> 정산 명세서 보기
+                            </button>
                         </div>
                     )}
+
                     {activeTab === 'stats' && <StatsView tasks={tasks.filter(t=>t.status==='paid')} />}
                 </main>
 
-                {/* --- 콤팩트 모달 (수정됨: 상단 배치 및 키보드 대응) --- */}
+                {/* 플로팅 등록 버튼 (우측 하단) */}
+                {activeTab === 'progress' && (
+                    <button 
+                        onClick={() => openTaskModal()} 
+                        className="fixed bottom-6 right-6 w-12 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg shadow-blue-200 flex items-center justify-center transition-transform active:scale-90 z-20"
+                    >
+                        <Plus size={24} strokeWidth={2.5} />
+                    </button>
+                )}
+
+                {/* --- 입력 팝업 (상단 배치 & 최적화) --- */}
                 {isTaskModalOpen && (
-                    // 기존 flex items-end(하단) -> items-start(상단) + pt-10(여백) 으로 수정
-                    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm animate-fade-in pt-10">
-                        <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl animate-slide-up overflow-hidden mx-4">
-                            {/* 모달 헤더 */}
-                            <div className="px-4 py-3 border-b flex justify-between items-center bg-gray-50/50">
-                                <h3 className="font-bold text-gray-800">{editingTask ? '작업 수정' : '새 작업'}</h3>
-                                <button onClick={closeTaskModal} className="w-7 h-7 flex items-center justify-center bg-gray-200 rounded-full text-gray-500 hover:bg-gray-300"><X size={16}/></button>
+                    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm animate-fade-in pt-4">
+                        <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl animate-slide-up overflow-hidden mx-4">
+                            {/* 헤더 */}
+                            <div className="px-4 py-2.5 border-b flex justify-between items-center bg-gray-50">
+                                <h3 className="font-bold text-gray-800 text-sm">{editingTask ? '작업 수정' : '새 작업 등록'}</h3>
+                                <button onClick={closeTaskModal} className="w-6 h-6 flex items-center justify-center bg-gray-200 rounded-full text-gray-500 hover:bg-gray-300"><X size={14}/></button>
                             </div>
                             
-                            {/* 모달 내용 */}
-                            <div className="p-4 space-y-4">
-                                <div className="grid grid-cols-2 gap-3">
-                                    <CompactAutocomplete label="거래처" placeholder="입력/선택" value={formData.client} onChange={v => setFormData({...formData, client: v})} options={clients} />
-                                    <CompactAutocomplete label="제품명" placeholder="입력/선택" value={formData.productName} onChange={v => setFormData({...formData, productName: v})} options={products} onSelect={p => setFormData(prev => ({...prev, unitPrice: p.defaultUnitPrice || 0}))} />
+                            <div className="p-4 space-y-3">
+                                {/* 거래처 / 제품명 */}
+                                <div className="grid grid-cols-2 gap-2">
+                                    <CompactAutocomplete label="거래처" placeholder="입력" value={formData.client} onChange={v => setFormData({...formData, client: v})} options={clients} />
+                                    <CompactAutocomplete label="제품명" placeholder="입력" value={formData.productName} onChange={v => setFormData({...formData, productName: v})} options={products} onSelect={p => setFormData(prev => ({...prev, unitPrice: p.defaultUnitPrice || 0}))} />
                                 </div>
 
-                                <div className="grid grid-cols-3 gap-3">
+                                {/* 수량 / 단가 */}
+                                <div className="grid grid-cols-3 gap-2">
                                     <div className="col-span-1">
                                         <label className="block text-xs font-semibold text-gray-500 mb-1">수량</label>
                                         <input 
                                             type="number" 
-                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-center font-bold focus:ring-1 focus:ring-blue-500 outline-none" 
+                                            className="w-full px-2 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-center font-bold focus:ring-1 focus:ring-blue-500 outline-none" 
                                             value={formData.quantity} 
                                             onChange={e => setFormData({...formData, quantity: e.target.value})}
-                                            onFocus={(e) => e.target.select()} // 클릭 시 전체 선택
+                                            onFocus={(e) => e.target.select()} 
                                         />
                                     </div>
                                     <div className="col-span-2">
                                         <label className="block text-xs font-semibold text-gray-500 mb-1">단가</label>
                                         <input 
                                             type="number" 
-                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-right font-bold focus:ring-1 focus:ring-blue-500 outline-none" 
+                                            className="w-full px-2 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-right font-bold focus:ring-1 focus:ring-blue-500 outline-none" 
                                             value={formData.unitPrice} 
                                             onChange={e => setFormData({...formData, unitPrice: e.target.value})}
-                                            onFocus={(e) => e.target.select()} // 클릭 시 전체 선택
+                                            onFocus={(e) => e.target.select()} 
                                         />
                                     </div>
                                 </div>
 
-                                {/* 지출, 예상 매출 섹션 삭제됨 */}
-
-                                <div>
-                                    <label className="block text-xs font-semibold text-gray-500 mb-1">비고</label>
-                                    <textarea className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm h-16 resize-none focus:ring-1 focus:ring-blue-500 outline-none" placeholder="메모 입력" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
-                                </div>
-
-                                {/* 하단 버튼 */}
-                                <div className="flex gap-2 pt-2">
-                                    {editingTask && (
-                                        <button onClick={handleDelete} className="bg-red-50 text-red-500 w-12 rounded-lg flex items-center justify-center border border-red-100"><Trash2 size={18}/></button>
+                                {/* 버튼 영역 (비고 위로 이동) */}
+                                <div className="grid grid-cols-2 gap-2 pt-1">
+                                    {/* 수정 모드일 때 삭제 버튼 표시 */}
+                                    {editingTask ? (
+                                        <button onClick={handleDelete} className="bg-red-50 text-red-500 py-2.5 rounded font-bold text-xs border border-red-100">삭제</button>
+                                    ) : (
+                                        <button onClick={() => handleSaveTask(true)} className="bg-blue-50 text-blue-600 py-2.5 rounded font-bold text-xs border border-blue-100 flex items-center justify-center gap-1">
+                                            <Plus size={14}/> 저장 후 추가
+                                        </button>
                                     )}
-                                    <button onClick={handleSaveTask} className="flex-1 bg-blue-600 text-white h-11 rounded-lg font-bold shadow-md hover:bg-blue-700 active:scale-95 transition-all">
-                                        {editingTask ? '수정 완료' : '등록하기'}
+                                    <button onClick={() => handleSaveTask(false)} className="bg-blue-600 text-white py-2.5 rounded font-bold text-xs shadow hover:bg-blue-700">
+                                        {editingTask ? '수정 완료' : '등록 완료'}
                                     </button>
                                 </div>
+
+                                {/* 비고 (맨 아래) */}
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-500 mb-1">비고 (선택)</label>
+                                    <textarea className="w-full px-2 py-2 bg-gray-50 border border-gray-200 rounded text-sm h-12 resize-none focus:ring-1 focus:ring-blue-500 outline-none" placeholder="특이사항 메모" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+                                </div>
                             </div>
-                            <div className="h-2 bg-white"></div>
                         </div>
                     </div>
                 )}
                 
-                {/* 기타 모달들 */}
                 {isSettlementModalOpen && <SettlementPreviewModal tasks={completedTasks.filter(t=>t.status==='completed')} onClose={()=>setIsSettlementModalOpen(false)} onConfirm={async ()=>{ const batch=writeBatch(db); completedTasks.filter(t=>t.status==='completed').forEach(t=>batch.update(doc(db,`artifacts/${appId}/public/data/tasks`,t.id),{status:'settlement_requested', settlementDate:serverTimestamp()})); await batch.commit(); setIsSettlementModalOpen(false); }} />}
                 {isProductModalOpen && <ProductManagerModal onClose={()=>setIsProductModalOpen(false)} products={products} db={db} appId={appId} />}
-            </div>
-        );
-    };
-
-    // --- 서브 컴포넌트: 아이템 ---
-    const TaskItem = ({ task, onClick, onStatusChange, readonly }) => {
-        const conf = STATUS_MAP[task.status] || STATUS_MAP['ready'];
-        return (
-            <div onClick={onClick} className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm active:bg-gray-50 transition-colors flex gap-3 relative overflow-hidden">
-                <div className={`w-1.5 absolute left-0 top-0 bottom-0 ${conf.color.split(' ')[0]}`}></div>
-                <div className="flex-1 pl-2">
-                    <div className="flex justify-between items-start mb-0.5">
-                        <div className="font-bold text-gray-800 text-sm leading-tight">{task.productName}</div>
-                        <span className="text-[10px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">{formatDate(task.updatedAt || task.createdAt)}</span>
-                    </div>
-                    <div className="text-xs text-gray-500 mb-1.5">{task.client} · {task.quantity}개</div>
-                    <div className="flex justify-between items-end">
-                        <div className="font-bold text-gray-900 text-sm">{formatCurrency(task.revenue)}</div>
-                        <div onClick={e => e.stopPropagation()} className="relative z-10">
-                            <select value={task.status} disabled={readonly} onChange={e => onStatusChange(task.id, e.target.value)} 
-                                className={`text-[11px] font-bold px-2 py-1 rounded-md border appearance-none outline-none pr-5 ${conf.color} ${readonly ? 'opacity-50' : ''}`}>
-                                {Object.keys(STATUS_MAP).map(k => <option key={k} value={k}>{STATUS_MAP[k].label}</option>)}
-                            </select>
-                            <ChevronDown size={10} className="absolute right-1.5 top-1.5 opacity-50 pointer-events-none"/>
-                        </div>
-                    </div>
-                </div>
             </div>
         );
     };
